@@ -1,0 +1,17 @@
+README.md
+setup.py
+minidyn/dyn/__init__.py
+minidyn/dyn/body.py
+minidyn/dyn/contact.py
+minidyn/dyn/joints.py
+minidyn/dyn/quat_utils.py
+minidyn/dyn/shape.py
+minidyn/dyn/sim.py
+minidyn/dyn/spatial.py
+minidyn/dyn/test.py
+minidyn/dyn/util.py
+minidyn/minidyn.egg-info/PKG-INFO
+minidyn/minidyn.egg-info/SOURCES.txt
+minidyn/minidyn.egg-info/dependency_links.txt
+minidyn/minidyn.egg-info/top_level.txt
+minidyn/utils/__init__.py

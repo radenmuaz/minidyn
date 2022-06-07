@@ -1,0 +1,6 @@
+README.md
+setup.py
+src/minidyn.egg-info/PKG-INFO
+src/minidyn.egg-info/SOURCES.txt
+src/minidyn.egg-info/dependency_links.txt
+src/minidyn.egg-info/top_level.txt
