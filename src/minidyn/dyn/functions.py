@@ -20,6 +20,7 @@ def kinetic_energy(inertia, v):
 def potential_energy(inertia, tf, g):
     def end(x, e=0.):
         return cat((x, jnp.array((e,)))).reshape(4,1)
+    
     return inertia.mass *  (end(g, 0.).T @ (tf @ end(inertia.com, 1.)))
     
 def inertia_to_world(inertia, tf):
