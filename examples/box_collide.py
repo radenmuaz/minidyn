@@ -8,6 +8,7 @@ import trimesh
       
 if __name__ == "__main__":
     world = dyn.World()
+    world.add_ground()
 
     box_body = dyn.Body()
     box_mass = 1.
@@ -16,9 +17,9 @@ if __name__ == "__main__":
                         moment=box_moment,
                         com=jnp.array((0, 0, 0)),
                                         )
-    box_shape = trimesh.creation.box((100., 100., 100.))
+    box_shape = trimesh.creation.box((1., 1., 1.))
     box_body.shapes = [mdn.col.Shape.from_trimesh(box_shape)]
-    world.add_body(box_body, q=jnp.zeros(7).at[0].set(1))
+    world.add_body(box_body, q=jnp.array([1., 0., 0, 0., 1, 0. , 2.]))
 
     box_body2 = dyn.Body()
     box_mass2 = 1.
@@ -27,15 +28,11 @@ if __name__ == "__main__":
                         moment=box_moment2,
                         com=jnp.array((0, 0, 0)),
                                         )
-    box_shape2 = trimesh.creation.box((20., 20., 20.))
+    box_shape2 = trimesh.creation.box((2., 2., 2.))
     box_body2.shapes = [mdn.col.Shape.from_trimesh(box_shape2)]
-    world.add_body(box_body2, q=jnp.array([1., 0., 0, 0., 150., 0. , 0.]))
+    world.add_body(box_body2, q=jnp.array([1., 0., 0, 0., -1., 0. , 2.]))
 
     world_solver = dyn.WorldSolver()
     
     sim = dyn.Simulator(world, world_solver)
     sim.start()
-    # run()
-    # for i in range(100):
-    #     qs, qds = sim(world, qs, qds, u)
-    #     import pdb;pdb.set_trace()
