@@ -33,7 +33,7 @@ class SATSolver(Solver):
   
     def solve(self, q1, q2, s1, s2):
         
-        v1 = F.vec2world(s1.vertices, F.q2tf(q1))
+        v1 = F.vec2world(s1.vertices, F.q2tf(q1)) # for normals, zero translate
         n1 = F.vec2world(s1.face_normals, F.q2tf(jnp.array([*q1[:4], 0, 0, 0])))
         v2 = F.vec2world(s2.vertices, F.q2tf(q2))
         n2 = F.vec2world(s2.face_normals, F.q2tf(jnp.array([*q2[:4], 0, 0, 0])))
@@ -45,10 +45,17 @@ class SATSolver(Solver):
         e1 = build_edge_vec(v1)
         e2 = build_edge_vec(v2)
         xaxes = jnp.reshape(jnp.cross(e1[:, jnp.newaxis, :], e2), (-1, 3))
-        xaxes = xaxes[~jnp.all(xaxes== 0, axis=1)] # prune zero vectors
+        idxzeros = jnp.all(xaxes== 0, axis=1).reshape(-1, 1)
+        replace = jnp.array([1,0,0]).tile((len(xaxes),1))
+        # import pdb;pdb.set_trace()
+        xaxes = jnp.where(idxzeros, replace, xaxes)
+        # idxzeros = jnp.broadcast_to(idxzeros, (idxzeros.shape[0], 3))
+        # @partial(jax.jit, static_argnums=(0,))
+
+        # xaxes[idxzeros,:] = jnp.array([1.,0,0])
+        # xaxes = xaxes[~jnp.all(xaxes== 0, axis=1)] # prune zero vectors
         xaxes = F.vec_normalize(xaxes)
         axes = jnp.concatenate([naxes, xaxes], axis=0)
-        # import pdb;pdb.set_trace()
 
 
         A_projs = axes @ v1.T
@@ -64,13 +71,13 @@ class SATSolver(Solver):
         # import pdb;pdb.set_trace()
         # print(d1andd2)
 
-        maxs = jnp.max(jnp.stack([A_proj_maxs, B_proj_maxs], axis=1), axis=1)
-        mins = jnp.min(jnp.stack([A_proj_mins, B_proj_mins], axis=1), axis=1)
+        # maxs = jnp.max(jnp.stack([A_proj_maxs, B_proj_maxs], axis=1), axis=1)
+        # mins = jnp.min(jnp.stack([A_proj_mins, B_proj_mins], axis=1), axis=1)
 
-        d1 = (A_proj_maxs - A_proj_mins) + (B_proj_maxs - B_proj_mins)
-        d2 = (maxs - mins)
-        overlay = (d1 > d2)
-        assert (overlap==overlay).all()
+        # d1 = (A_proj_maxs - A_proj_mins) + (B_proj_maxs - B_proj_mins)
+        # d2 = (maxs - mins)
+        # overlay = (d1 > d2)
+        # assert (overlap==overlay).all()
         return overlap, overlap.all()
 
         # print(overlay)

@@ -10,9 +10,11 @@ from typing import *
 from jax import vmap, tree_multimap,lax
 
 def vec_with1(v):
-            return jnp.array([*v, 1]).reshape(4,1)
+    return jnp.array([*v, 1]).reshape(4,1)
+
 def vec_rm1(tf):
     return tf[:3]
+
 def vec2world(v, tf):
     Nv= v.shape[0]
     tf1 = jnp.broadcast_to(tf, (Nv, 4, 4))
@@ -23,9 +25,10 @@ def vec2world(v, tf):
     return v.squeeze()
 
 def vec_normalize(v):
-            norm = jnp.linalg.norm(v,axis=1)[:, jnp.newaxis]
-            norm = jnp.where(norm>0, norm, 1)
-            return v/norm
+    norm = jnp.linalg.norm(v,axis=1)[:, jnp.newaxis]
+    norm = jnp.where(norm>0, norm, 1)
+    return v/norm
+    
 def kinetic_energy(inertia, v):
     ω = v[:3].reshape(1,3)
     s = v[3:].reshape(1,3)

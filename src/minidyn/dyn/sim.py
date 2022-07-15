@@ -135,7 +135,7 @@ class WorldSolver(object):
         qds_new  = q_vec_new[N:].reshape(qds.shape)
         return qs_new, qds_new
 
-    # @partial(jax.jit, static_argnums=(0,))
+    @partial(jax.jit, static_argnums=(0,))
     def solve(self, world, qs, qds, u):
         def get_energies(qs, qds, u, world):
             tfs = vmap(F.q2tf)(qs)
@@ -172,11 +172,11 @@ class WorldSolver(object):
 
         colres = self.colsolver(world, qs)
         jnp.set_printoptions(precision=4)
-        if colres[0][0][1]==True:
-            v1=world.bodies[0].shapes[0].vertices
-            v2=world.bodies[1].shapes[0].vertices
-            v2w = F.vec2world(v2, F.q2tf(qs[1]))
-            import pdb;pdb.set_trace()
+        # if colres[0][0][1]==True:
+        #     v1=world.bodies[0].shapes[0].vertices
+        #     v2=world.bodies[1].shapes[0].vertices
+        #     v2w = F.vec2world(v2, F.q2tf(qs[1]))
+        #     import pdb;pdb.set_trace()
         print(colres)
         print(world.body_pairs_idxs)
         return qdds
@@ -199,7 +199,8 @@ class Simulator:
         self.renderer = gfx.renderers.WgpuRenderer(self.canvas)
         self.scene = gfx.Scene()
         self.camera = gfx.PerspectiveCamera(70, 16 / 9)
-        self.camera.position = Vector3(0,0,10)
+        self.camera.position = Vector3(0,10,0)
+        self.camera.look_at(Vector3(0,0,0))
         self.world = world
         self.world_solver = world_solver
         self.qs, self.qds = world.get_init_state()
@@ -240,8 +241,7 @@ class Simulator:
             q = self.qs[i]
             shapes = self.viz_data['body2shapes'][i]
             quat = Quaternion(q[0], q[1], q[2], q[3])
-            vec3 = Vector3(q[4], q[5], q[6]) # note renderer z is depth
-            # vec3 = Vector3(q[4], q[6], q[5]) # note renderer z is depth
+            vec3 = Vector3(q[4], q[5], q[6])
             for shape in shapes:
                 shape.rotation = quat
                 shape.position = vec3
