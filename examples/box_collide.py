@@ -8,7 +8,7 @@ import trimesh
       
 if __name__ == "__main__":
     world = dyn.World()
-    # world.add_ground()
+    world.add_ground()
 
     box_body = dyn.Body()
     box_mass = 1.
@@ -19,7 +19,8 @@ if __name__ == "__main__":
                                         )
     box_shape = trimesh.creation.box((1., 1., 1.))
     box_body.shapes = [mdn.col.Shape.from_trimesh(box_shape)]
-    world.add_body(box_body, q=jnp.array([1., 0., 0, 0., 1, 0. , 1.]))
+    world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 1, 0. , 3.]))
+    # world.add_body(box_body, q=jnp.array([1., 0., 0, 0., 1, 0. , 5.]))
 
     # box_body2 = dyn.Body()
     # box_mass2 = 2.
