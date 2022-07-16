@@ -55,21 +55,59 @@ class SATSolver(Solver):
         # xaxes[idxzeros,:] = jnp.array([1.,0,0])
         # xaxes = xaxes[~jnp.all(xaxes== 0, axis=1)] # prune zero vectors
         xaxes = F.vec_normalize(xaxes)
-        axes = jnp.concatenate([naxes, xaxes], axis=0)
+        # axes = jnp.concatenate([naxes, xaxes], axis=0)
 
 
-        A_projs = axes @ v1.T
-        B_projs = axes @ v2.T
-        A_proj_maxs = jnp.max(A_projs, axis=1)
-        A_proj_mins = jnp.min(A_projs, axis=1)
-        B_proj_maxs = jnp.max(B_projs, axis=1)
-        B_proj_mins = jnp.min(B_projs, axis=1)
+        np1 = naxes @ v1.T
+        np2 = naxes @ v2.T
+        np1_maxs = jnp.max(np1, axis=1)
+        np1_mins = jnp.min(np1, axis=1)
+        np2_maxs = jnp.max(np2, axis=1)
+        np2_mins = jnp.min(np2, axis=1)
+
+        xp1 = xaxes @ v1.T
+        xp2 = xaxes @ v2.T
+        xp1_maxs = jnp.max(xp1, axis=1)
+        xp1_mins = jnp.min(xp1, axis=1)
+        xp2_maxs = jnp.max(xp2, axis=1)
+        xp2_mins = jnp.min(xp2, axis=1)
         
-        d1 = A_proj_mins < B_proj_maxs
-        d2 = A_proj_maxs > B_proj_mins
-        overlap= jnp.logical_and(d1, d2)
-        # import pdb;pdb.set_trace()
-        # print(d1andd2)
+        is_n_overlap = jnp.logical_and(np1_mins < np2_maxs, np1_maxs > np2_mins)
+        is_x_overlap = jnp.logical_and(xp1_mins < xp2_maxs, xp1_maxs > xp2_mins)
+        is_overlap = jnp.logical_and(is_n_overlap.all(), is_x_overlap.all())
+        def did_overlap(naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
+            n_left = jnp.abs(np1_mins - np2_maxs)
+            n_right = jnp.abs(np1_maxs - np2_mins)
+            n_left_right = jnp.stack([n_left, n_right], axis=1)
+            n_overlap = jnp.min(n_left_right, axis=1)
+
+            x_left = jnp.abs(xp1_mins - xp2_maxs)
+            x_right = jnp.abs(xp1_maxs - xp2_mins)
+            x_left_right = jnp.stack([x_left, x_right], axis=1)
+            x_overlap = jnp.min(x_left_right, axis=1)
+            def n_smaller(naxes, n_overlap, xaxes, x_overlap):
+                mtv = naxes[n_overlap.argmin()] * n_overlap.min()
+                return mtv
+                # import pdb; pdb.set_trace()
+
+            def x_smaller(naxes, n_overlap, xaxes, x_overlap):
+                mtv = naxes[x_overlap.argmin()] * x_overlap.min()
+                # return mtv
+                import pdb; pdb.set_trace()
+            res = jax.lax.cond(n_overlap.min() < x_overlap.min(), 
+                            n_smaller, x_smaller, 
+                            *(naxes, n_overlap, xaxes, x_overlap))
+            return res
+        def did_not_overlap(naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
+            return jnp.array([0,0,0])
+
+        res = jax.lax.cond(is_overlap, did_overlap, did_not_overlap,
+                     *(naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs))
+
+        import pdb;pdb.set_trace()
 
         # maxs = jnp.max(jnp.stack([A_proj_maxs, B_proj_maxs], axis=1), axis=1)
         # mins = jnp.min(jnp.stack([A_proj_mins, B_proj_mins], axis=1), axis=1)
@@ -78,7 +116,7 @@ class SATSolver(Solver):
         # d2 = (maxs - mins)
         # overlay = (d1 > d2)
         # assert (overlap==overlay).all()
-        return overlap, overlap.all()
+        return is_overlap, res
 
         # print(overlay)
         # import pdb;pdb.set_trace()
