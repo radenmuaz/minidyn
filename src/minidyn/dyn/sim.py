@@ -135,7 +135,7 @@ class WorldSolver(object):
         qds_new  = q_vec_new[N:].reshape(qds.shape)
         return qs_new, qds_new
 
-    # @partial(jax.jit, static_argnums=(0,))
+    @partial(jax.jit, static_argnums=(0,))
     def solve(self, world, qs, qds, u):
         def get_energies(qs, qds, u, world):
             tfs = vmap(F.q2tf)(qs)

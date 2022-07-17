@@ -30,13 +30,119 @@ class SATSolver(Solver):
             colres += [res]
         
         return colres
+    
+    def closest_point(self, p, ve, eps=1e-9):
+        # import pdb; pdb.set_trace()
+        # if we dot product this against a (n, 3)
+        # it is equivalent but faster than array.sum(axis=1)
+        result = jnp.zeros(3)[jnp.newaxis, :]
+        p = p[jnp.newaxis, :]
+        fv = ve[jnp.newaxis, :, :]
+
+        # get the three points of each triangle
+        # use the same notation as RTCD to avoid confusion
+        a = fv[:, 0, :]
+        b = fv[:, 1, :]
+        c = fv[:, 2, :]
+
+        # check if P is in vertex region outside A
+        ab = b - a
+        ac = c - a
+        ap = p - a
+        # this is a faster equivalent of:
+        # diagonal_dot(ab, ap)
+        d1 = (ab * ap).sum(axis=1)
+        d2 = (ac * ap).sum(axis=1)
+
+        # is the point at A
+        is_a = jnp.logical_and(d1 < eps, d2 < eps)
+        result = jnp.where(is_a, a, result)
+        # if any(is_a):
+        #     result[is_a] = a[is_a]
+        #     remain[is_a] = False
+
+        # check if P in vertex region outside B
+        bp = p - b
+        d3 = (ab * bp).sum(axis=1)
+        d4 = (ac * bp).sum(axis=1)
+
+        # do the logic check
+        is_b = (d3 > eps) & (d4 <= d3)
+        result = jnp.where(is_b, b , result)
+        # if any(is_b):
+        #     result[is_b] = b[is_b]
+        #     remain[is_b] = False
+
+        # check if P in edge region of AB, if so return projection of P onto A
+        vc = (d1 * d4) - (d3 * d2)
+        is_ab = ((vc < eps) &
+                (d1 > -eps) &
+                (d3 < eps))
+        v = (d1 / (d1 - d3)).reshape((-1, 1))
+        result = jnp.where(is_ab, a + (v * ab) , result)
+        # if any(is_ab):
+        #     v = (d1[is_ab] / (d1[is_ab] - d3[is_ab])).reshape((-1, 1))
+        #     result[is_ab] = a[is_ab] + (v * ab[is_ab])
+        #     remain[is_ab] = False
+
+        # check if P in vertex region outside C
+        cp = p - c
+        d5 = (ab * cp).sum(axis=1)
+        d6 = (ac * cp).sum(axis=1)
+        is_c = (d6 > -eps) & (d5 <= d6)
+        result = jnp.where(is_c, c , result)
+        # if any(is_c):
+        #     result[is_c] = c[is_c]
+        #     remain[is_c] = False
+
+        # check if P in edge region of AC, if so return projection of P onto AC
+        vb = (d5 * d2) - (d1 * d6)
+        is_ac = (vb < eps) & (d2 > -eps) & (d6 < eps)
+        w = (d2 / (d2 - d6)).reshape((-1, 1))
+        result = jnp.where(is_ac, a + w * ac , result)
+        # if any(is_ac):
+        #     w = (d2[is_ac] / (d2[is_ac] - d6[is_ac])).reshape((-1, 1))
+        #     result[is_ac] = a[is_ac] + w * ac[is_ac]
+        #     remain[is_ac] = False
+
+        # check if P in edge region of BC, if so return projection of P onto BC
+        va = (d3 * d6) - (d5 * d4)
+        is_bc = ((va < eps) &
+             ((d4 - d3) > - eps) &
+             ((d5 - d6) > -eps))
+        d43 = d4 - d3
+        w = (d43 / (d43 + (d5 - d6))).reshape((-1, 1))
+        result = jnp.where(is_bc,  b + w * (c - b) , result)
+
+        is_inside = ~(is_a | is_b | is_ab | is_c | is_ac | is_bc)
+        denom = 1.0 / (va + vb + vc)
+        v = (vb * denom).reshape((-1, 1))
+        w = (vc * denom).reshape((-1, 1))
+        # compute Q through its barycentric coordinates
+        result = jnp.where(is_inside, a + (ab * v) + (ac * w), result)
+        # any remaining points must be inside face region
+        # if any(remain):
+        #     # point is inside face region
+        #     denom = 1.0 / (va[remain] + vb[remain] + vc[remain])
+        #     v = (vb[remain] * denom).reshape((-1, 1))
+        #     w = (vc[remain] * denom).reshape((-1, 1))
+        #     # compute Q through its barycentric coordinates
+        #     result[remain] = a[remain] + (ab[remain] * v) + (ac[remain] * w)
+        # print('is_a , is_b, is_c ,is_ab , is_ac , is_bc, is_inside')
+        # print(is_a , is_b, is_c ,is_ab , is_ac , is_bc, is_inside)
+        # import pdb; pdb.set_trace()
+
+        return result.squeeze()
+
   
     def solve(self, q1, q2, s1, s2):
         
         v1 = F.vec2world(s1.vertices, F.q2tf(q1)) # for normals, zero translate
         n1 = F.vec2world(s1.face_normals, F.q2tf(jnp.array([*q1[:4], 0, 0, 0])))
+        f1 = s1.faces
         v2 = F.vec2world(s2.vertices, F.q2tf(q2))
         n2 = F.vec2world(s2.face_normals, F.q2tf(jnp.array([*q2[:4], 0, 0, 0])))
+        f2 = s2.faces
 
         naxes = jnp.concatenate([n1, n2], axis=0)
         def build_edge_vec(v):
@@ -75,7 +181,7 @@ class SATSolver(Solver):
         is_n_overlap = jnp.logical_and(np1_mins < np2_maxs, np1_maxs > np2_mins)
         is_x_overlap = jnp.logical_and(xp1_mins < xp2_maxs, xp1_maxs > xp2_mins)
         is_overlap = jnp.logical_and(is_n_overlap.all(), is_x_overlap.all())
-        def did_overlap(naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+        def did_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
                         xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
             n_left = jnp.abs(np1_mins - np2_maxs)
             n_right = jnp.abs(np1_maxs - np2_mins)
@@ -86,28 +192,47 @@ class SATSolver(Solver):
             x_right = jnp.abs(xp1_maxs - xp2_mins)
             x_left_right = jnp.stack([x_left, x_right], axis=1)
             x_overlap = jnp.min(x_left_right, axis=1)
-            def n_smaller(naxes, n_overlap, xaxes, x_overlap):
-                mtv = naxes[n_overlap.argmin()] * n_overlap.min()
-                return mtv
-                # import pdb; pdb.set_trace()
-
-            def x_smaller(naxes, n_overlap, xaxes, x_overlap):
-                mtv = naxes[x_overlap.argmin()] * x_overlap.min()
-                # return mtv
+            def n_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
+                # face-to-face contacts
+                length = n_overlap.min()
+                i_overlap = n_overlap.argmin()
+                Nn1 = len(n1)
+                # naxes was [n1, n2], i offset by on i_overlap number
+                i_ref = jax.lax.cond(i_overlap < Nn1, lambda i: i, lambda i: i-Nn1, i_overlap)
+                n_ref = jax.lax.cond(i_overlap < Nn1, lambda i: n1[i], lambda i: n2[i], i_ref)
+                v_ref = jax.lax.cond(i_overlap < Nn1, lambda i: v1[f1[i]], lambda i: v2[f2[i]], i_ref)
+                ns = jax.lax.cond(i_overlap < Nn1, lambda x: n2, lambda x: n1, None)
+                vs = jax.lax.cond(i_overlap < Nn1, lambda x: v2, lambda x: v1, None)
+                fs = jax.lax.cond(i_overlap < Nn1, lambda x: f2, lambda x: f1, None)
+                cosine_sim = (jnp.broadcast_to(n_ref, (len(ns),1,3)) @ ns[:,:,jnp.newaxis]).squeeze()
+                i_in = jnp.argmin(cosine_sim)
+                n_in = ns[i_in]
+                v_in = vs[fs[i_in]]
+                p0 = self.closest_point(v_ref[0], v_in)
+                p_ref = self.closest_point(p0, v_ref)
+                p_in = self.closest_point(p_ref, v_in)
                 import pdb; pdb.set_trace()
+                mtv = n_ref * length.min()
+                return jnp.array([True]), mtv, p_ref, p_in
+
+            def x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
+                # edge-to-edge contacts
+                mtv = naxes[x_overlap.argmin()] * x_overlap.min()
+                return mtv, jnp.zeros(3), jnp.zeros(3)
+                # import pdb; pdb.set_trace()
             res = jax.lax.cond(n_overlap.min() < x_overlap.min(), 
                             n_smaller, x_smaller, 
-                            *(naxes, n_overlap, xaxes, x_overlap))
+                            *(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap))
             return res
-        def did_not_overlap(naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+        def did_not_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
                         xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
-            return jnp.array([0,0,0])
+            return jnp.array([False]), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3)
 
         res = jax.lax.cond(is_overlap, did_overlap, did_not_overlap,
-                     *(naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+                     *(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
                         xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs))
 
-        import pdb;pdb.set_trace()
+        # import pdb;pdb.set_trace()
 
         # maxs = jnp.max(jnp.stack([A_proj_maxs, B_proj_maxs], axis=1), axis=1)
         # mins = jnp.min(jnp.stack([A_proj_mins, B_proj_mins], axis=1), axis=1)
@@ -116,7 +241,7 @@ class SATSolver(Solver):
         # d2 = (maxs - mins)
         # overlay = (d1 > d2)
         # assert (overlap==overlay).all()
-        return is_overlap, res
+        return res
 
         # print(overlay)
         # import pdb;pdb.set_trace()
