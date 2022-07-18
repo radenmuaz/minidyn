@@ -18,7 +18,7 @@ from wgpu.gui.auto import WgpuCanvas, run
 import pygfx as gfx
 from pygfx.linalg import Vector3, Matrix4, Quaternion
 import trimesh
-
+import math
 # functions = [func1, func2, func3]
 # index = jnp.arange(len(functions))
 # x = jnp.ones((3, 5))
@@ -55,16 +55,10 @@ class World:
         body = Body()
         mass = 1
         moment = jnp.eye(3) * mass
-        body.inertia = mdn.dyn.Inertia(mass=mass,
-                            moment=moment,
-                            com=jnp.array((0, 0, 0)),
-                                            )
-        shape = trimesh.creation.box((3., 1, 3.))
-        # shape = trimesh.creation.box((4., 0.1, 4.))
-        # w = 50.
-        # shape = trimesh.Trimesh(vertices=([w,0,w], [w,0,-w], [-w,0,-w], [-w,0,w]))
+        body.inertia = mdn.dyn.Inertia(mass=mass,moment=moment)
+        shape = trimesh.creation.box((100., 100, .1))
+        # body.add_shape(mdn.col.Shape.from_trimesh(shape))
         body.shapes = [mdn.col.Shape.from_trimesh(shape)]
-
         self.add_body(body, static=True,q=jnp.array([1., 0.0, 0, 0., 0, 0. , 0.]))
 
     def add_body(self, body, q=None, qd=None, static=False):
@@ -199,14 +193,17 @@ class Simulator:
         self.renderer = gfx.renderers.WgpuRenderer(self.canvas)
         self.scene = gfx.Scene()
         self.camera = gfx.PerspectiveCamera(70, 16 / 9)
-        self.camera.position = Vector3(0,10,0)
-        self.camera.look_at(Vector3(0,0,0))
+        self.camera.position = Vector3(10,10,3)
         self.world = world
         self.world_solver = world_solver
         self.qs, self.qds = world.get_init_state()
 
-        self.controls = gfx.OrbitControls(self.camera.position.clone())
+        self.controls = gfx.OrbitControls(
+            eye=self.camera.position.clone(),
+                                    target=Vector3(0,0,0),
+                                    up=Vector3(0, 0, 1))
         self.controls.add_default_event_handlers(self.renderer, self.canvas, self.camera)
+        # self.controls.update_camera(self.camera)
 
         self.viz_data = viz_data
         if self.viz_data is None:

@@ -19,8 +19,9 @@ if __name__ == "__main__":
                                         )
     box_shape = trimesh.creation.box((1., 1., 1.))
     box_body.shapes = [mdn.col.Shape.from_trimesh(box_shape)]
-    world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 1, 0. , 2.]))
-    # world.add_body(box_body, q=jnp.array([1., 0., 0, 0., 1, 0. , 5.]))
+    # box_body.add_shape(mdn.col.Shape.from_trimesh(box_shape))
+    world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 0, 0. , 10]))#,
+                            # qd=jnp.array([0.0, 0.5, 0.5, 0., 0, 0. , 0]))
 
     # box_body2 = dyn.Body()
     # box_mass2 = 2.

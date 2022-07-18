@@ -14,6 +14,9 @@ class Body:
         children = (self.inertia, self.shapes)
         aux_data = None
         return (children, aux_data)
+    
+    def add_shape(self,shape):
+        self.shapes += [shape,]
 
     @classmethod
     def tree_unflatten(cls, aux_data, children):

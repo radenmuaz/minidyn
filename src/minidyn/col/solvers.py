@@ -211,14 +211,22 @@ class SATSolver(Solver):
                 p0 = self.closest_point(v_ref[0], v_in)
                 p_ref = self.closest_point(p0, v_ref)
                 p_in = self.closest_point(p_ref, v_in)
-                import pdb; pdb.set_trace()
-                mtv = n_ref * length.min()
-                return jnp.array([True]), mtv, p_ref, p_in
+                d2 = jnp.dot(p_ref-p_in, n_ref)
+                l2 = jnp.linalg.norm(p_ref-p_in)
+                
+                mtv = n_ref * length
+                # print(mtv, length)
+                # print((p_ref-p_in), d2)
+                # import pdb; pdb.set_trace()
+                return jnp.array([True]), mtv, n_ref, p_ref, p_in
 
             def x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
                 # edge-to-edge contacts
-                mtv = naxes[x_overlap.argmin()] * x_overlap.min()
-                return mtv, jnp.zeros(3), jnp.zeros(3)
+                i_ref = x_overlap.argmin()
+                n_ref = naxes[i_ref]
+                length = x_overlap.min()
+                mtv = n_ref * length
+                return jnp.array([True]), mtv, jnp.zeros(3), jnp.zeros(3), jnp.zeros(3)
                 # import pdb; pdb.set_trace()
             res = jax.lax.cond(n_overlap.min() < x_overlap.min(), 
                             n_smaller, x_smaller, 
@@ -226,7 +234,7 @@ class SATSolver(Solver):
             return res
         def did_not_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
                         xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
-            return jnp.array([False]), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3)
+            return jnp.array([False]), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3)
 
         res = jax.lax.cond(is_overlap, did_overlap, did_not_overlap,
                      *(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,

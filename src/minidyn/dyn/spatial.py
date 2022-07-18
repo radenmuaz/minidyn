@@ -8,7 +8,7 @@ from jax.tree_util import register_pytree_node_class
 
 @register_pytree_node_class
 class Inertia:
-    def __init__(self, mass, moment, cross_part=None, com=None):
+    def __init__(self, mass, moment, cross_part=None, com=jnp.array((0, 0, 0))):
         self.mass = mass
         self.moment = moment
         self.cross_part = cross_part if cross_part is not None else mass * com

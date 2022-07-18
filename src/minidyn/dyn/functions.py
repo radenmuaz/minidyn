@@ -26,9 +26,8 @@ def vec2world(v, tf):
 
 def vec_normalize(v):
     norm = jnp.linalg.norm(v,axis=1)[:, jnp.newaxis]
-    norm = jnp.where(norm>0, norm, 1)
-    return v/norm
-    
+    return jnp.where(norm>0, v/norm, v)
+
 def kinetic_energy(inertia, v):
     ω = v[:3].reshape(1,3)
     s = v[3:].reshape(1,3)
@@ -59,28 +58,33 @@ def inertia_to_world(inertia, tf):
 
     return Inertia(m, Jnew, mcnew)
 
-def quat_norm(quat):
-    quat = quat
-    return quat / (quat @ quat.T)**0.5
+def quat_norm(quat,eps=1e-9):
+    # return quat / (quat @ quat.T)**0.5
+    # return vec_normalize(quat)
+    # return quat/norm
+    norm = jnp.linalg.norm(quat)
+    # return jnp.where(norm>eps, quat/norm, quat)# jnp.array([1.,0,0,0]))
+    return jnp.where(norm>eps, quat/norm, jnp.array([1.,0,0,0]))
 
-def quat2mat(quat):
+
+def quat2mat(quat, eps=1e-9):
     w, x, y, z = quat[0], quat[1], quat[2], quat[3]
     Nq = w*w + x*x + y*y + z*z
-    # import pdb;pdb.set_trace()
-    # if (Nq < 1e-9):
-    #     return jnp.eye(3)
-    # else:
-    s = 2.0/Nq
-    X = x*s
-    Y = y*s
-    Z = z*s
-    wX = w*X; wY = w*Y; wZ = w*Z
-    xX = x*X; xY = x*Y; xZ = x*Z
-    yY = y*Y; yZ = y*Z; zZ = z*Z
-    return jnp.array(
-        [[ 1.0-(yY+zZ), xY-wZ, xZ+wY ],
-        [ xY+wZ, 1.0-(xX+zZ), yZ-wX ],
-        [ xZ-wY, yZ+wX, 1.0-(xX+yY) ]])
+    def get_mat(w, x, y, z, Nq):
+        s = 2.0/Nq
+        X = x*s
+        Y = y*s
+        Z = z*s
+        wX = w*X; wY = w*Y; wZ = w*Z
+        xX = x*X; xY = x*Y; xZ = x*Z
+        yY = y*Y; yZ = y*Z; zZ = z*Z
+        return jnp.array(
+            [[ 1.0-(yY+zZ), xY-wZ, xZ+wY ],
+            [ xY+wZ, 1.0-(xX+zZ), yZ-wX ],
+            [ xZ-wY, yZ+wX, 1.0-(xX+yY) ]])
+    return jnp.where(Nq<eps, jnp.eye(3), get_mat(w, x, y, z, Nq))
+    # return  get_mat(w, x, y, z, Nq)
+    
 
 
 def q2tf(q: jnp.array):
