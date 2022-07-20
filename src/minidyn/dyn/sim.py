@@ -18,7 +18,6 @@ from wgpu.gui.auto import WgpuCanvas, run
 import pygfx as gfx
 from pygfx.linalg import Vector3, Matrix4, Quaternion
 import trimesh
-import math
 # functions = [func1, func2, func3]
 # index = jnp.arange(len(functions))
 # x = jnp.ones((3, 5))
@@ -56,7 +55,8 @@ class World:
         mass = 1
         moment = jnp.eye(3) * mass
         body.inertia = mdn.dyn.Inertia(mass=mass,moment=moment)
-        shape = trimesh.creation.box((100., 100, .1))
+        # shape = trimesh.creation.box((100., 100, .1))
+        shape = trimesh.creation.box((10., 10, 2))
         # body.add_shape(mdn.col.Shape.from_trimesh(shape))
         body.shapes = [mdn.col.Shape.from_trimesh(shape)]
         self.add_body(body, static=True,q=jnp.array([1., 0.0, 0, 0., 0, 0. , 0.]))
@@ -150,34 +150,74 @@ class WorldSolver(object):
             Vs = vmap(F.potential_energy)(Is, tfs, gs)
             # import pdb;pdb.set_trace()
             return Ts, Vs
+        
+        def C_collide(world, qs):
+            collide_flags, mtvs, n_refs, p_refs, p_ins = self.colsolver(world, qs)
+            ux = n_refs - jnp.dot(n_refs.squeeze(), n_refs.squeeze())
+            ux = ux / jnp.linalg.norm(ux)
+            uy = jnp.cross(n_refs, ux)
+            def depth(collide_flag, p_ref, p_in, vec):
+                # return jnp.array([0])
+                # print(collide_flag)
+                # return jnp.where(collide_flag, jnp.dot(p_in-p_ref, vec), 0)
+                return jnp.where(collide_flag, jnp.dot(p_ref-p_in, vec), 0)
+            
+            
+            # import pdb;pdb.set_trace()
+
+            C_pen = jax.vmap(depth)(collide_flags, p_refs, p_ins, n_refs)
+            return C_pen
+            # C_fricx = jax.vmap(depth)(collide_flags, p_refs, p_ins, ux)
+            # C_fricy = jax.vmap(depth)(collide_flags, p_refs, p_ins, uy)
+            return jnp.concatenate([C_pen, C_fricx, C_fricy])
+        def Cd(J, qds):
+            return (J*qds).sum()
         def L(qs, qds, u, world):
             Ts, Vs = get_energies(qs, qds, u, world)
             # Ts, Vs = self.get_energies(qs, qds, u, world)
             return jnp.sum(Ts) - jnp.sum(Vs)
+        
+        # reference shape and q dot vector
         N = qs.size
+        qd_vec = qds.reshape(N, 1)
+        u_vec = u.reshape(N, 1)
+
+        # Mass, Coriolis, gravity
         M = jax.hessian(L, 1)(qs, qds, u, world).reshape(N, N)
         Minv = jnp.linalg.pinv(M, rcond=1e-20)
         g = jax.grad(L, 0)(qs, qds, u, world).reshape(N, 1)
         C =  jax.jacfwd(jax.grad(L, 1), 0)(qs, qds, u, world).reshape(N, N)
-        
-        colres = self.colsolver(world, qs)
-        import pdb;pdb.set_trace()
-        
-        # C_pen = 
 
-        qd_vec = qds.reshape(N, 1)
-        qdds_vec = Minv @ ( g - C @ qd_vec)
+        # Constraints
+        # J = jax.jacfwd(partial(C_collide, world))(qs)
+        # J = J.reshape(J.shape[0],N)
+        Jp = jax.jacfwd(partial(C_collide, world))(qs)
+        Jp = Jp.reshape(Jp.shape[0],N)
+        J = jax.jacfwd(Cd)(Jp, qd_vec)
+        J = J.reshape(J.shape[0],N)
+        K = J @ Minv @ J.T
+        Kinv = jnp.linalg.inv(K)
+
+        
+        Lmult = Kinv @ J @ Minv @ (u_vec - C @ qd_vec + g)
+        JL = J.T @ Lmult
+        JL = jnp.where(jnp.isnan(JL), 0, JL)
+
+        qdds_vec = Minv @ ( g - C @ qd_vec - JL)
         qdds = qdds_vec.reshape(qds.shape)
-        # mask = jnp.array(world.static_masks).tile((7,1)).T
+        # import pdb;pdb.set_trace()
+        mask = jnp.array(world.static_masks)[:, jnp.newaxis]
+        qdds = jnp.where(mask == True, 0, qdds)
 
-        jnp.set_printoptions(precision=4)
-        # if colres[0][0][1]==True:
-        #     v1=world.bodies[0].shapes[0].vertices
-        #     v2=world.bodies[1].shapes[0].vertices
-        #     v2w = F.vec2world(v2, F.q2tf(qs[1]))
-        #     import pdb;pdb.set_trace()
-        print(colres)
+
+
+        # jnp.set_printoptions(precision=4)
         print(world.body_pairs_idxs)
+        col = self.colsolver(world, qs)[0]
+        print(col)
+        if col.any():
+            import pdb;pdb.set_trace()
+
         return qdds
     
     def tree_flatten(self):

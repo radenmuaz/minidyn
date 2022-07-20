@@ -39,20 +39,12 @@ class SATSolver(Solver):
         f1 = stack_attr(s1, 'faces')
         f2 = stack_attr(s2, 'faces')
 
-        # import pdb;pdb.set_trace()
-        return jax.vmap(self.solve)(q1, q2, v1, v2, n1, n2, f1, f2)
-        colres = []
+        (collide_flags, mtvs, nrefs, p_refs, p_ins) = \
+          jax.vmap(self.solve)(q1, q2, v1, v2, n1, n2, f1, f2)
+        for var in (collide_flags, mtvs, nrefs, p_refs, p_ins):
+            var = jnp.stack(var)
+        return (collide_flags, mtvs, nrefs, p_refs, p_ins)
 
-        for ((ib1, ib2), spair)  in zip(world.body_pairs_idxs, world.shape_pairs):
-            q1, q2 = qs[ib1], qs[ib2]
-            res = []
-
-            for (s1, s2) in spair:
-                # import pdb;pdb.set_trace()
-                res += [self.solve(q1, q2, s1, s2)]
-            colres += [res]
-        
-        return colres
     
     def closest_point(self, p, ve, eps=1e-9):
         result = jnp.zeros(3)[jnp.newaxis, :]
