@@ -23,16 +23,16 @@ if __name__ == "__main__":
     world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 0, 0. , 10]))#,
                             # qd=jnp.array([0.0, 0.5, 0.5, 0., 0, 0. , 0]))
 
-    # box_body2 = dyn.Body()
-    # box_mass2 = 2.
-    # box_moment2 = jnp.eye(3) * box_mass
-    # box_body2.inertia = dyn.Inertia(mass=box_mass2,
-    #                     moment=box_moment2,
-    #                     com=jnp.array((0, 0, 0)),
-    #                                     )
-    # box_shape2 = trimesh.creation.box((2., 2., 2.))
-    # box_body2.shapes = [mdn.col.Shape.from_trimesh(box_shape2)]
-    # world.add_body(box_body2, q=jnp.array([1., 0., 0, 0., 0., 0. , 1.]))
+    box_body2 = dyn.Body()
+    box_mass2 = 2.
+    box_moment2 = jnp.eye(3) * box_mass
+    box_body2.inertia = dyn.Inertia(mass=box_mass2,
+                        moment=box_moment2,
+                        com=jnp.array((0, 0, 0)),
+                                        )
+    box_shape2 = trimesh.creation.box((2., 2., 2.))
+    box_body2.shapes = [mdn.col.Shape.from_trimesh(box_shape2)]
+    world.add_body(box_body2, q=jnp.array([1., 0., 0, 0., 0., 0. , 1.]))
 
     world_solver = dyn.WorldSolver()
     

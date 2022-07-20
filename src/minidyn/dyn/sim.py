@@ -142,7 +142,7 @@ class WorldSolver(object):
             g = world.gravity.reshape(1,3)
             # no_g = jnp.zeros(3).reshape(1,3)
             mask = jnp.array(world.static_masks).tile((3,1)).T
-            gs = jnp.tile(world.gravity.reshape(1,3), len(tfs)).reshape(len(tfs), 3)
+            gs = jnp.tile(g.reshape(1,3), len(tfs)).reshape(len(tfs), 3)
             # gs = jnp.tile(world.gravity.reshape(1,3), len(tfs))
             gs = jnp.where(mask == True, 0, gs)
             # gs = gs * jnp.invert(mask).astype(gs.dtype)
@@ -157,14 +157,19 @@ class WorldSolver(object):
         N = qs.size
         M = jax.hessian(L, 1)(qs, qds, u, world).reshape(N, N)
         Minv = jnp.linalg.pinv(M, rcond=1e-20)
-        G = jax.grad(L, 0)(qs, qds, u, world).reshape(N, 1)
+        g = jax.grad(L, 0)(qs, qds, u, world).reshape(N, 1)
         C =  jax.jacfwd(jax.grad(L, 1), 0)(qs, qds, u, world).reshape(N, N)
+        
+        colres = self.colsolver(world, qs)
+        import pdb;pdb.set_trace()
+        
+        # C_pen = 
+
         qd_vec = qds.reshape(N, 1)
-        qdds_vec = Minv @ ( G - C @ qd_vec)
+        qdds_vec = Minv @ ( g - C @ qd_vec)
         qdds = qdds_vec.reshape(qds.shape)
         # mask = jnp.array(world.static_masks).tile((7,1)).T
 
-        colres = self.colsolver(world, qs)
         jnp.set_printoptions(precision=4)
         # if colres[0][0][1]==True:
         #     v1=world.bodies[0].shapes[0].vertices

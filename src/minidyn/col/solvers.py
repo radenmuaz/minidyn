@@ -6,6 +6,8 @@ from jax.tree_util import register_pytree_node_class
 from functools import partial
 import trimesh
 import minidyn as mdn
+from jax import vmap, tree_map,lax
+
 class Solver:
     pass
 
@@ -15,13 +17,34 @@ class SATSolver(Solver):
         pass
 
     
-    # @partial(jax.jit, static_argnums=(0,))
+    @partial(jax.jit, static_argnums=(0,))
     def __call__(self, world, qs):
+        q1, q2, s1, s2 = [], [], [], []
+        for ((ib1, ib2), shape_spairs)  in zip(world.body_pairs_idxs, world.shape_pairs):
+            for bs1, bs2 in shape_spairs:
+                q1 += qs[ib1][jnp.newaxis,:]
+                q2 += qs[ib2][jnp.newaxis,:]
+                s1 += [bs1]
+                s2 += [bs2]
+        q1 = jnp.stack(q1)
+        q2 = jnp.stack(q2)
+        def stack_attr(pytrees, attr):
+            return  tree_map( lambda *values: 
+                jnp.stack(values, axis=0), *[getattr(t, attr) for t in pytrees])
+
+        v1 = stack_attr(s1, 'vertices')
+        v2 = stack_attr(s2, 'vertices')
+        n1 = stack_attr(s1, 'face_normals')
+        n2 = stack_attr(s2, 'face_normals')
+        f1 = stack_attr(s1, 'faces')
+        f2 = stack_attr(s2, 'faces')
+
+        # import pdb;pdb.set_trace()
+        return jax.vmap(self.solve)(q1, q2, v1, v2, n1, n2, f1, f2)
         colres = []
 
-        for ((ib1, ib2), (b1, b2), spair)  in zip(world.body_pairs_idxs, world.body_pairs, world.shape_pairs):
+        for ((ib1, ib2), spair)  in zip(world.body_pairs_idxs, world.shape_pairs):
             q1, q2 = qs[ib1], qs[ib2]
-            b1, b2 = b1, b2
             res = []
 
             for (s1, s2) in spair:
@@ -32,15 +55,9 @@ class SATSolver(Solver):
         return colres
     
     def closest_point(self, p, ve, eps=1e-9):
-        # import pdb; pdb.set_trace()
-        # if we dot product this against a (n, 3)
-        # it is equivalent but faster than array.sum(axis=1)
         result = jnp.zeros(3)[jnp.newaxis, :]
         p = p[jnp.newaxis, :]
         fv = ve[jnp.newaxis, :, :]
-
-        # get the three points of each triangle
-        # use the same notation as RTCD to avoid confusion
         a = fv[:, 0, :]
         b = fv[:, 1, :]
         c = fv[:, 2, :]
@@ -49,29 +66,17 @@ class SATSolver(Solver):
         ab = b - a
         ac = c - a
         ap = p - a
-        # this is a faster equivalent of:
-        # diagonal_dot(ab, ap)
         d1 = (ab * ap).sum(axis=1)
         d2 = (ac * ap).sum(axis=1)
-
-        # is the point at A
         is_a = jnp.logical_and(d1 < eps, d2 < eps)
         result = jnp.where(is_a, a, result)
-        # if any(is_a):
-        #     result[is_a] = a[is_a]
-        #     remain[is_a] = False
 
         # check if P in vertex region outside B
         bp = p - b
         d3 = (ab * bp).sum(axis=1)
         d4 = (ac * bp).sum(axis=1)
-
-        # do the logic check
         is_b = (d3 > eps) & (d4 <= d3)
         result = jnp.where(is_b, b , result)
-        # if any(is_b):
-        #     result[is_b] = b[is_b]
-        #     remain[is_b] = False
 
         # check if P in edge region of AB, if so return projection of P onto A
         vc = (d1 * d4) - (d3 * d2)
@@ -80,10 +85,6 @@ class SATSolver(Solver):
                 (d3 < eps))
         v = (d1 / (d1 - d3)).reshape((-1, 1))
         result = jnp.where(is_ab, a + (v * ab) , result)
-        # if any(is_ab):
-        #     v = (d1[is_ab] / (d1[is_ab] - d3[is_ab])).reshape((-1, 1))
-        #     result[is_ab] = a[is_ab] + (v * ab[is_ab])
-        #     remain[is_ab] = False
 
         # check if P in vertex region outside C
         cp = p - c
@@ -91,19 +92,12 @@ class SATSolver(Solver):
         d6 = (ac * cp).sum(axis=1)
         is_c = (d6 > -eps) & (d5 <= d6)
         result = jnp.where(is_c, c , result)
-        # if any(is_c):
-        #     result[is_c] = c[is_c]
-        #     remain[is_c] = False
 
         # check if P in edge region of AC, if so return projection of P onto AC
         vb = (d5 * d2) - (d1 * d6)
         is_ac = (vb < eps) & (d2 > -eps) & (d6 < eps)
         w = (d2 / (d2 - d6)).reshape((-1, 1))
         result = jnp.where(is_ac, a + w * ac , result)
-        # if any(is_ac):
-        #     w = (d2[is_ac] / (d2[is_ac] - d6[is_ac])).reshape((-1, 1))
-        #     result[is_ac] = a[is_ac] + w * ac[is_ac]
-        #     remain[is_ac] = False
 
         # check if P in edge region of BC, if so return projection of P onto BC
         va = (d3 * d6) - (d5 * d4)
@@ -120,29 +114,18 @@ class SATSolver(Solver):
         w = (vc * denom).reshape((-1, 1))
         # compute Q through its barycentric coordinates
         result = jnp.where(is_inside, a + (ab * v) + (ac * w), result)
-        # any remaining points must be inside face region
-        # if any(remain):
-        #     # point is inside face region
-        #     denom = 1.0 / (va[remain] + vb[remain] + vc[remain])
-        #     v = (vb[remain] * denom).reshape((-1, 1))
-        #     w = (vc[remain] * denom).reshape((-1, 1))
-        #     # compute Q through its barycentric coordinates
-        #     result[remain] = a[remain] + (ab[remain] * v) + (ac[remain] * w)
-        # print('is_a , is_b, is_c ,is_ab , is_ac , is_bc, is_inside')
-        # print(is_a , is_b, is_c ,is_ab , is_ac , is_bc, is_inside)
-        # import pdb; pdb.set_trace()
 
         return result.squeeze()
 
   
-    def solve(self, q1, q2, s1, s2):
+    def solve(self, q1, q2, v1, v2, n1, n2, f1, f2):
         
-        v1 = F.vec2world(s1.vertices, F.q2tf(q1)) # for normals, zero translate
-        n1 = F.vec2world(s1.face_normals, F.q2tf(jnp.array([*q1[:4], 0, 0, 0])))
-        f1 = s1.faces
-        v2 = F.vec2world(s2.vertices, F.q2tf(q2))
-        n2 = F.vec2world(s2.face_normals, F.q2tf(jnp.array([*q2[:4], 0, 0, 0])))
-        f2 = s2.faces
+        v1 = F.vec2world(v1, F.q2tf(q1)) 
+        v2 = F.vec2world(v2, F.q2tf(q2)) 
+        
+        # for normals, zero translate
+        n1 = F.vec2world(n1, F.q2tf(jnp.array([*q1[:4], 0, 0, 0])))
+        n2 = F.vec2world(n2, F.q2tf(jnp.array([*q2[:4], 0, 0, 0])))
 
         naxes = jnp.concatenate([n1, n2], axis=0)
         def build_edge_vec(v):
