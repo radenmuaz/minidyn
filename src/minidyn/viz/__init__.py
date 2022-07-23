@@ -1,1 +1,0 @@
-from minidyn.dyn.render import *

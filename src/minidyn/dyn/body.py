@@ -1,7 +1,6 @@
 from dataclasses import dataclass
 import jax
 from jax import numpy as jnp, random
-from minidyn.dyn.spatial import *
 
 from jax.tree_util import register_pytree_node_class
 @register_pytree_node_class
@@ -24,3 +23,49 @@ class Body:
     
 
 
+@register_pytree_node_class
+class Inertia:
+    def __init__(self, mass, moment, cross_part=None, com=jnp.array((0, 0, 0))):
+        self.mass = mass
+        self.moment = moment
+        self.cross_part = cross_part if cross_part is not None else mass * com
+        self.com = com if com is not None else cross_part / mass
+
+    def tree_flatten(self):
+        children = (self.mass, self.moment, self.cross_part, self.com)
+        aux_data = None
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children)    
+
+import minidyn.dyn.functions as F
+
+from jax.tree_util import register_pytree_node_class
+
+@register_pytree_node_class
+class Shape: 
+    def __init__(self, vertices, faces, face_normals):
+        self.vertices = vertices
+        self.faces = faces
+        self.face_normals = face_normals
+    
+    def tree_flatten(self):
+        children = (self.vertices, 
+                    self.faces, 
+                    self.face_normals, 
+        )
+        aux_data = None
+        return (children, aux_data)
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        return cls(*children)  
+
+    @classmethod
+    def from_trimesh(cls, trimesh):
+        return cls(jnp.array(trimesh.vertices), 
+        jnp.array(trimesh.faces), 
+        jnp.array(trimesh.face_normals))
+    

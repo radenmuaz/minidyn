@@ -11,7 +11,7 @@ from jax import vmap, tree_map,lax
 class Solver:
     pass
 
-class SATSolver(Solver):
+class SeparatingAxis(Solver):
 
     def __init__(self):
         pass
