@@ -18,14 +18,21 @@ class SeparatingAxis(Solver):
 
     
     @partial(jax.jit, static_argnums=(0,))
-    def __call__(self, world, qs):
+    def __call__(self, world, q):
+        # q1, q2, s1, s2 = [], [], [], []
+        # for ((ib1, ib2), shape_spairs)  in zip(world.body_pairs_idxs, world.shape_pairs):
+        #     for bs1, bs2 in shape_spairs:
+        #         q1 += q[ib1][jnp.newaxis,:]
+        #         q2 += q[ib2][jnp.newaxis,:]
+        #         s1 += [bs1]
+        #         s2 += [bs2]
         q1, q2, s1, s2 = [], [], [], []
-        for ((ib1, ib2), shape_spairs)  in zip(world.body_pairs_idxs, world.shape_pairs):
-            for bs1, bs2 in shape_spairs:
-                q1 += qs[ib1][jnp.newaxis,:]
-                q2 += qs[ib2][jnp.newaxis,:]
-                s1 += [bs1]
-                s2 += [bs2]
+        for (ib1, ib2), (bs1, bs2) in zip(world.body_pairs_mat_idxs, world.shape_pairs_mat):
+            q1 += q[ib1][jnp.newaxis,:]
+            q2 += q[ib2][jnp.newaxis,:]
+            s1 += [bs1]
+            s2 += [bs2]
+        # import pdb;pdb.set_trace()
         q1 = jnp.stack(q1)
         q2 = jnp.stack(q2)
         def stack_attr(pytrees, attr):
@@ -181,13 +188,13 @@ class SeparatingAxis(Solver):
                 fs = jax.lax.cond(i_overlap < Nn1, lambda x: f2, lambda x: f1, None)
                 cosine_sim = (jnp.broadcast_to(n_ref, (len(ns),1,3)) @ ns[:,:,jnp.newaxis]).squeeze()
                 i_in = jnp.argmin(cosine_sim)
-                n_in = ns[i_in]
+                # n_in = ns[i_in]
                 v_in = vs[fs[i_in]]
                 p0 = self.closest_point(v_ref[0], v_in)
                 p_ref = self.closest_point(p0, v_ref)
                 p_in = self.closest_point(p_ref, v_in)
-                d2 = jnp.dot(p_ref-p_in, n_ref)
-                l2 = jnp.linalg.norm(p_ref-p_in)
+                # d2 = jnp.dot(p_ref-p_in, n_ref)
+                # l2 = jnp.linalg.norm(p_ref-p_in)
                 
                 mtv = n_ref * length
                 # print(mtv, length)
@@ -197,11 +204,13 @@ class SeparatingAxis(Solver):
 
             def x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
                 # edge-to-edge contacts
+                # TODO: p_ref and p_in are one midpoint at n_ref, refer xaxes 
+                
                 i_ref = x_overlap.argmin()
                 n_ref = naxes[i_ref]
                 length = x_overlap.min()
                 mtv = n_ref * length
-                return jnp.array([True]), mtv, jnp.zeros(3), jnp.zeros(3), jnp.zeros(3)
+                return jnp.array([True]), mtv, n_ref, jnp.zeros(3), jnp.zeros(3)
                 # import pdb; pdb.set_trace()
             res = jax.lax.cond(n_overlap.min() < x_overlap.min(), 
                             n_smaller, x_smaller, 
@@ -231,14 +240,14 @@ class SeparatingAxis(Solver):
         return overlay, (overlay).all()
 
 if __name__ == '__main__':
-    solver = SATSolver()
+    solver = SeparatingAxis()
     q1 = jnp.array([1, 0, 0, 0., 0, 0, 0]) 
     # q2 = jnp.array([1, 0, 0, 0., 0.99, 0.99, 0.99]) # collide
     # q2 = jnp.array([1, 0, 0, 0., 1.01, 0, 0]) # not collide
     q2 = jnp.array([1, 0, 0, 0., 0, 0, 10]) # not collide
     # s1 = mdn.col.Shape.from_trimesh(trimesh.creation.box((1., 1., 1.)))
-    s1 = mdn.col.Shape.from_trimesh(trimesh.creation.box((10., 0.1, 10.)))
-    s2 = mdn.col.Shape.from_trimesh(trimesh.creation.box((1., 1., 1.)))
+    s1 = mdn.dyn.body.Shape.from_trimesh(trimesh.creation.box((10., 0.1, 10.)))
+    s2 = mdn.dyn.body.Shape.from_trimesh(trimesh.creation.box((1., 1., 1.)))
     overlap, overlap_all = solver.solve(q1,q2,s1,s2)
     print(overlap)
     print(overlap_all)

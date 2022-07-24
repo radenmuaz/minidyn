@@ -64,7 +64,11 @@ class LagrangianDynamics(object):
         g = jax.grad(L, 0)(q, qd, u, world).reshape(N, 1)
         C =  jax.jacfwd(jax.grad(L, 1), 0)(q, qd, u, world).reshape(N, N)
 
-        qdd_vec = Minv @ ( g - C @ qd_vec)
+        
+        F_c = self.contact_solver(world, self.collision_solver, q, qd)
+        F_c = F_c.reshape(N, 1)
+
+        qdd_vec = Minv @ ( g - C @ qd_vec - F_c)
         qdd = qdd_vec.reshape(qd.shape)
         # import pdb;pdb.set_trace()
         mask = jnp.array(world.static_masks)[:, jnp.newaxis]
@@ -77,7 +81,7 @@ class LagrangianDynamics(object):
         # col = self.collision_solver(world, q);print(col[0]); 
         # if col[0].any():import pdb;pdb.set_trace()
 
-        aux = ()#M, K, Lmult, J, Jd, JL)
+        aux = (F_c)#M, K, Lmult, J, Jd, JL)
         return qdd, aux
     
     def tree_flatten(self):

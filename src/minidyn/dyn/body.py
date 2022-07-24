@@ -46,15 +46,25 @@ from jax.tree_util import register_pytree_node_class
 
 @register_pytree_node_class
 class Shape: 
-    def __init__(self, vertices, faces, face_normals):
+    def __init__(self, vertices, faces, face_normals,
+                    Kp=2, Kd=0,
+                    mu=0.5, alpha=0.9):
         self.vertices = vertices
         self.faces = faces
         self.face_normals = face_normals
+        self.Kp = Kp
+        self.Kd = Kd
+        self.mu = mu
+        self.alpha = alpha
     
     def tree_flatten(self):
         children = (self.vertices, 
                     self.faces, 
                     self.face_normals, 
+                    self.Kp, 
+                    self.Kd,
+                    self.mu, 
+                    self.alpha
         )
         aux_data = None
         return (children, aux_data)

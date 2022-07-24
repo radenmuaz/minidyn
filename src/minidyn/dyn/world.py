@@ -31,8 +31,10 @@ class World:
     def __init__(self, root=Body(), joints=[],
                      bodies=[], shapes=[],gravity=jnp.array((0, 0, 9.81)),
                     init_qs=[], init_qds=[],
-                    body_pairs_idxs=[], shape_pairs_idxs=[],
+                    body_pairs_idxs=[], shape_pairs_idxs=[], 
+                    body_pairs_mat_idxs=[], shape_pairs_mat_idxs=[],
                     body_pairs=[], shape_pairs=[],
+                    body_pairs_mat=[], shape_pairs_mat=[],
                     static_masks=[]):
         self.root = root
         self.joints = joints
@@ -41,11 +43,18 @@ class World:
         self.gravity = gravity
         self.init_qs = init_qs
         self.init_qds = init_qds
+    
+        self.body_pairs = body_pairs
+        self.shape_pairs = shape_pairs
+        self.body_pairs_mat = body_pairs_mat # body pairs tiled to match shapes len
+        self.shape_pairs_mat = shape_pairs_mat # body pairs tiled to match shapes len
 
         self.body_pairs_idxs = body_pairs_idxs
         self.shape_pairs_idxs = shape_pairs_idxs
-        self.body_pairs = body_pairs
-        self.shape_pairs = shape_pairs
+        self.body_pairs_mat_idxs = body_pairs_mat_idxs 
+        self.shape_pairs_mat_idxs = shape_pairs_mat_idxs 
+        
+
         self.static_masks = static_masks
     
     def add_ground(self):
@@ -54,10 +63,12 @@ class World:
         moment = jnp.eye(3) * mass
         body.inertia = mdn.dyn.body.Inertia(mass=mass,moment=moment)
         # shape = trimesh.creation.box((100., 100, .1))
-        shape = trimesh.creation.box((10., 10, 2))
+        h = 100
+        w = 100
+        shape = trimesh.creation.box((w, w, h))
         # body.add_shape(mdn.col.Shape.from_trimesh(shape))
         body.shapes = [mdn.dyn.body.Shape.from_trimesh(shape)]
-        self.add_body(body, static=True,q=jnp.array([1., 0.0, 0, 0., 0, 0. , 0.]))
+        self.add_body(body, static=True,q=jnp.array([1., 0.0, 0, 0., 0, 0. , -h/2]))
 
     def add_body(self, body, q=None, qd=None, static=False):
         q = q if q is not None else jnp.zeros(7).at[0].set(1)
@@ -73,8 +84,12 @@ class World:
         for i, b in enumerate(self.bodies):
             self.body_pairs_idxs += [[N, i]]
             self.shape_pairs_idxs += [[[j, k] for j in rl(body.shapes) for k in rl(b.shapes)]]
+            self.body_pairs_mat_idxs += [[N, i]*(len(b.shapes)*len(body.shapes))]
+            self.shape_pairs_mat_idxs += [[j, k] for j in rl(body.shapes) for k in rl(b.shapes)]
             self.body_pairs += [[body, self.bodies[i]]]
             self.shape_pairs += [[[j, k] for j in body.shapes for k in b.shapes]]
+            self.body_pairs_mat += [[body, self.bodies[i]]*(len(b.shapes)*len(body.shapes))]
+            self.shape_pairs_mat += [[j, k] for j in body.shapes for k in b.shapes]
 
         self.bodies += [body,]
         self.static_masks += [static]
@@ -98,8 +113,12 @@ class World:
                     self.init_qds,
                     self.body_pairs_idxs,
                     self.shape_pairs_idxs,
+                    self.body_pairs_mat_idxs,
+                    self.shape_pairs_mat_idxs,
                     self.body_pairs,
                     self.shape_pairs,
+                    self.body_pairs_mat,
+                    self.shape_pairs_mat,
                     self.static_masks
                     )
         aux_data = None

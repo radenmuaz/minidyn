@@ -22,13 +22,14 @@ if __name__ == "__main__":
                                         )
     box_shape = trimesh.creation.box((1., 1., 1.))
     box_body.shapes = [mdn.dyn.body.Shape.from_trimesh(box_shape)]
+    box_body.shapes[0].Kp = 0.5
     # box_body.add_shape(mdn.col.Shape.from_trimesh(box_shape))
     # world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 0, 0. , 0.7]),
     #                         qd=jnp.array([1e-9, 0, 0, 0., 0, 0. , -1]))
-    world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 0, 0. , 1.5]))#,
+    # world.add_body(box_body, q=jnp.array([1., 0.3, 0, 0., 0, 0. , 1.5]))#,
     # world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 0, 0. , 1.7]))#,
-    # world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 0, 0. , 0.2]))#,
-                            # qd=jnp.array([0.0, 0.5, 0.5, 0., 0, 0. , 0]))
+    world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 0, 0. , 1.5]),#,
+                            qd=jnp.array([0.0, 0.5, 0.5, 0., 0, 0. , 0]))
 
     # box_body2 = dyn.Body()
     # box_mass2 = 1.

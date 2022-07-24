@@ -78,7 +78,7 @@ class PygfxSimulator:
         # print()
         # for i, qd in enumerate(self.qd): print(f'qd{i}: ', qd)
         # print()
-        # print('K',aux[1])
+        print('F_c',aux[0])
         # print('Lmult',aux[2])
         # print('J',aux[3].reshape(self.q.shape[0],-1))
         # print('Jd',aux[4].reshape(self.q.shape[0],-1))
