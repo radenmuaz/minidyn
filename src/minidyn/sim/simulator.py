@@ -20,7 +20,8 @@ class PygfxSimulator:
         self.renderer = gfx.renderers.WgpuRenderer(self.canvas)
         self.scene = gfx.Scene()
         self.camera = gfx.PerspectiveCamera(70, 16 / 9)
-        self.camera.position = Vector3(10,10,3)
+        # self.camera.position = Vector3(10,10,3)
+        self.camera.position = Vector3(10,10,1)
         self.world = world
         self.dynamics = dynamics
         self.q, self.qd = world.get_init_state()
@@ -42,7 +43,8 @@ class PygfxSimulator:
                         faces=shape.faces)
                     mesh = gfx.Mesh(
                         gfx.trimesh_geometry(trimesh_mesh),
-                        gfx.MeshPhongMaterial(),
+                        gfx.MeshBasicMaterial(wireframe=True)
+                        # gfx.MeshPhongMaterial(),
                     )
                     shapes += [mesh]
                 body2shapes += [shapes]
@@ -64,7 +66,7 @@ class PygfxSimulator:
         for i in range(len(self.q)):
             q = self.q[i]
             shapes = self.viz_data['body2shapes'][i]
-            quat = Quaternion(q[0], q[1], q[2], q[3])
+            quat = Quaternion(q[1], q[2], q[3],q[0])
             vec3 = Vector3(q[4], q[5], q[6])
             for shape in shapes:
                 shape.rotation = quat
@@ -74,11 +76,14 @@ class PygfxSimulator:
         self.canvas.request_draw()
         print(f'FPS: {1/(time.time()-t0):.2f}\n')
 
-        # for i, q in enumerate(self.q): print(f'q{i}: ', q)
-        # print()
-        # for i, qd in enumerate(self.qd): print(f'qd{i}: ', qd)
-        # print()
-        print('F_c',aux[0])
+        for i, q in enumerate(self.q): print(f'q{i}: ', q)
+        print()
+        for i, qd in enumerate(self.qd): print(f'qd{i}: ', qd)
+        print()
+        for i, F_c in enumerate(aux[0]): print(f'F_c{i}: ', F_c)
+        print()
+        print('collisions:',aux[1][1])
+        # if aux[1][1].any(): import pdb;pdb.set_trace()
         # print('Lmult',aux[2])
         # print('J',aux[3].reshape(self.q.shape[0],-1))
         # print('Jd',aux[4].reshape(self.q.shape[0],-1))

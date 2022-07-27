@@ -45,15 +45,11 @@ class SeparatingAxis(Solver):
         n2 = stack_attr(s2, 'face_normals')
         f1 = stack_attr(s1, 'faces')
         f2 = stack_attr(s2, 'faces')
-        # import pdb; pdb.set_trace()
 
-        # with jax.disable_jit():
         (collide_flags, mtvs, nrefs, p_refs, p_ins) = \
           jax.vmap(self.solve)(q1, q2, v1, v2, n1, n2, f1, f2)
         for var in (collide_flags, mtvs, nrefs, p_refs, p_ins):
             var = jnp.stack(var)
-        # import pdb;pdb.set_trace()
-        
         return (collide_flags, mtvs, nrefs, p_refs, p_ins)
 
     
@@ -203,10 +199,10 @@ class SeparatingAxis(Solver):
                 # l2 = jnp.linalg.norm(p_ref-p_in)
                 
                 mtv = n_ref * length
-                # print(mtv, length)
+                print(mtv, length)
                 # print((p_ref-p_in), d2)
-                # import pdb; pdb.set_trace()
-                return jnp.stack((jnp.array([True]*3), mtv, n_ref, p_ref, p_in))
+                import pdb; pdb.set_trace()
+                return jnp.array([True]), mtv, n_ref, p_ref, p_in
 
             def x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
                 # edge-to-edge contacts
@@ -228,34 +224,27 @@ class SeparatingAxis(Solver):
                 length = x_overlap.min()
                 mtv = n_ref * length
                 # import pdb; pdb.set_trace()
-                return jnp.stack((jnp.array([True]*3), mtv, n_ref, p_ref, p_in))
+                return jnp.array([True]), mtv, n_ref, p_ref, p_in
                 # import pdb; pdb.set_trace()
-            res = jnp.where(n_overlap.min() < x_overlap.min(), 
-                            n_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap), 
-                            x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap))
+            res = jax.lax.cond(n_overlap.min() < x_overlap.min(), 
+                            n_smaller, x_smaller, 
+                            *(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap))
 
             return res
         def did_not_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
                         xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
-            return jnp.stack((jnp.array([False]*3), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3)))
+            return jnp.array([False]), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3)
 
         # res = jax.lax.cond(is_overlap, did_overlap, did_not_overlap,
         #              *(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
         #                 xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs))
 
-        res = jnp.where(is_overlap, 
-                    did_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs),
-                    did_not_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs)
-                     )
+        with jax.disable_jit():
+            res = jax.lax.cond(is_overlap, did_overlap, did_not_overlap,
+                     *(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs))
+        return res
         # import pdb;pdb.set_trace()
-        # return res
-                
-        (collide_flags, mtvs, nrefs, p_refs, p_ins) = res[0],res[1],res[2],res[3],res[4]
-        collide_flags = (collide_flags==1).all()
-        # (collide_flags, mtvs, nrefs, p_refs, p_ins) = jnp.split(res, 5)
-        return  (collide_flags, mtvs, nrefs, p_refs, p_ins)
 
 if __name__ == '__main__':
     solver = SeparatingAxis()

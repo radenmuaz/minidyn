@@ -29,6 +29,10 @@ class LagrangianDynamics(object):
         q_vec_new = self.integrator(q_vec, qd_vec, self.dt)
         q_new = q_vec_new[:N].reshape(q.shape)
         qd_new  = q_vec_new[N:].reshape(qd.shape)
+        # import pdb;pdb.set_trace()
+        def norm_quat_part(q):
+            return q.at[:4].set(F.quat_norm(q[:4]))
+        q_new = jax.vmap(norm_quat_part)(q_new)
         return q_new, qd_new, aux
 
     @partial(jax.jit, static_argnums=(0,))
@@ -65,23 +69,23 @@ class LagrangianDynamics(object):
         C =  jax.jacfwd(jax.grad(L, 1), 0)(q, qd, u, world).reshape(N, N)
 
         
-        F_c = self.contact_solver(world, self.collision_solver, q, qd)
-        F_c = F_c.reshape(N, 1)
+        F_c, colaux = self.contact_solver(world, self.collision_solver, q, qd)
+        F_c_vec = F_c.reshape(N, 1)
 
-        qdd_vec = Minv @ ( g - C @ qd_vec - F_c)
+        qdd_vec = Minv @ ( g - C @ qd_vec - F_c_vec)
         qdd = qdd_vec.reshape(qd.shape)
-        # import pdb;pdb.set_trace()
         mask = jnp.array(world.static_masks)[:, jnp.newaxis]
         qdd = jnp.where(mask == True, 0, qdd)
 
 
 
         # jnp.set_printoptions(precision=4)
-        print(world.body_pairs_idxs)
+        # print(world.body_pairs_idxs)
         # col = self.collision_solver(world, q);print(col[0]); 
         # if col[0].any():import pdb;pdb.set_trace()
 
-        aux = (F_c)#M, K, Lmult, J, Jd, JL)
+        aux = (F_c, colaux, g)#M, K, Lmult, J, Jd, JL)
+        # import pdb;pdb.set_trace()
         return qdd, aux
     
     def tree_flatten(self):

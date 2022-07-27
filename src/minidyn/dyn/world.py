@@ -63,12 +63,13 @@ class World:
         moment = jnp.eye(3) * mass
         body.inertia = mdn.dyn.body.Inertia(mass=mass,moment=moment)
         # shape = trimesh.creation.box((100., 100, .1))
-        h = 100
-        w = 100
+        h = 1.3
+        w = 10.
         shape = trimesh.creation.box((w, w, h))
         # body.add_shape(mdn.col.Shape.from_trimesh(shape))
         body.shapes = [mdn.dyn.body.Shape.from_trimesh(shape)]
-        self.add_body(body, static=True,q=jnp.array([1., 0.0, 0, 0., 0, 0. , -h/2]))
+        self.add_body(body, static=True,q=jnp.array([1., 0.0 , 0, 0., 0, 0. , -h/2]))
+        # self.add_body(body, static=True,q=jnp.array([0.999, 0 , 0.04, 0., 0, 0. , -h/2]))
 
     def add_body(self, body, q=None, qd=None, static=False):
         q = q if q is not None else jnp.zeros(7).at[0].set(1)
