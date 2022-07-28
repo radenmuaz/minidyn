@@ -22,16 +22,16 @@ if __name__ == "__main__":
                         com=jnp.array((0, 0, 0)),
                                         )
     # box_shape = trimesh.creation.box((1., 1., 1.))
-    box_shape = trimesh.creation.capsule(height=1.0, radius=1, count=[4,4])
+    box_shape = trimesh.creation.capsule(height=1.0, radius=0.5, count=[8,8])
     # breakpoint()
     box_body.shapes = [mdn.dyn.body.Shape.from_trimesh(box_shape)]
-    box_body.shapes[0].Kp = 5
+    box_body.shapes[0].Kp = 20
     # world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 0, 0. , 1.5]),qd=jnp.array([1e-9, 0.1, 0, 0., 0, 0. , 0]))
     # world.add_body(box_body, q=jnp.array([1., 0.0, 0, 0., 0, 0. , 1.5]),qd=jnp.array([1e-9, 0.1, 0, 0., 0, 0. , 0]))
     # world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 0.5]))
     # world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 2]))
     # world.add_body(box_body, q=jnp.array([0.999, 0, 0.04, 0., 0, 0. , 0.5]))
-    world.add_body(box_body, q=jnp.array([0.892, 0.099, 0.239, 0.370, 0, 0. , 1.5]), qd=jnp.array([0, 0.1, 0.0, 0., 0, 0. , 0]))
+    world.add_body(box_body, q=jnp.array([0.892, 0.099, 0.239, 0.370, 0, 0. , 2]), qd=jnp.array([0, 0.05, 0.0, 0., 0, 0. , 0]))
 
     # box_body2 = dyn.Body()
     # box_mass2 = 1.
@@ -60,8 +60,11 @@ if __name__ == "__main__":
     #                         qd=jnp.array([1e-9, 0, 0, 0., 0, 0. , 0]))
 
     # dynamics = mdn.dyn.dynamics.LagrangianDynamics()
-    dt=1/60.
+    # dt=1/60.
+    dt=1/60
     dynamics = mdn.dyn.dynamics.LagrangianDynamics(dt=dt)
     
     sim = mdn.sim.simulator.PygfxSimulator(world, dynamics)
+    # dynamics.dt=1/100.
+
     sim.start()

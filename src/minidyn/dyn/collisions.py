@@ -107,47 +107,41 @@ class SeparatingAxis(Solver):
 
         def did_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
                         xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
-            n_left = np1_maxs - np2_mins
-            n_right = np2_maxs - np1_mins
-            n_left_right = jnp.stack([n_left, n_right], axis=1)
-            n_overlap = jnp.min(n_left_right, axis=1)
+            n1_diff = np1_maxs - np2_mins
+            n2_diff = np2_maxs - np1_mins
+            n1_overlap = n1_diff.min()
+            n2_overlap = n2_diff.min()
+            i1 = n1_diff.argmin()
+            i1 = jnp.where(i1>len(n1),i1-len(n2),i1)
+            i2 = n2_diff.argmin()
+            i2 = jnp.where(i2>len(n2),i2-len(n1),i2)
 
-            x_left = xp1_maxs - xp2_mins
-            x_right = xp2_maxs - xp1_mins
-            x_left_right = jnp.stack([x_left, x_right], axis=1)
-            x_overlap = jnp.min(x_left_right, axis=1)
-            def n_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
-                # face-to-face contacts
-                i_overlap = n_overlap.argmin()
-                Nn1 = len(n1)
-                # naxes was [n1, n2], i offset by on i_overlap number
-                i_ref = jax.lax.cond(i_overlap < Nn1, lambda i: i, lambda i: i-Nn1, i_overlap)
-                n_ref = jax.lax.cond(i_overlap < Nn1, lambda i: n1[i], lambda i: n2[i], i_ref)
-                v_ref = jax.lax.cond(i_overlap < Nn1, lambda i: v1[f1[i]], lambda i: v2[f2[i]], i_ref)
-                ns = jax.lax.cond(i_overlap < Nn1, lambda x: n2, lambda x: n1, None)
-                vs = jax.lax.cond(i_overlap < Nn1, lambda x: v2, lambda x: v1, None)
-                fs = jax.lax.cond(i_overlap < Nn1, lambda x: f2, lambda x: f1, None)
-                cosine_sim = (jnp.broadcast_to(n_ref, (len(ns),1,3)) @ ns[:,:,jnp.newaxis]).squeeze()
+            x1_diff = xp1_maxs - xp2_mins
+            x2_diff = xp2_maxs - xp1_mins
+            x1_overlap = jnp.min(x1_diff)
+            x2_overlap = jnp.min(x2_diff)
+            # breakpoint()
+
+            def n_smaller(v1, v2, n1, n2, f1, f2, i, n_overlap, n_diff):
+                n_ref = n1[i]
+                v_ref = v1[f1[i]]
+                cosine_sim = (jnp.broadcast_to(n_ref, (len(n2),1,3)) @ n2[:,:,jnp.newaxis]).squeeze()
                 i_in = jnp.argmin(cosine_sim)
-                # n_in = ns[i_in]
-                v_in = vs[fs[i_in]]
+                # n_in = n2[i_in]
+                v_in = v2[f2[i_in]]
                 p0 = self.closest_point(v_ref[0], v_in)
                 p_ref = self.closest_point(p0, v_ref)
                 p_in = self.closest_point(p_ref, v_in)
                 # p_ref = self.closest_point(p_in, v_ref)
                 # d2 = jnp.dot(p_ref-p_in, n_ref)
                 # l2 = jnp.linalg.norm(p_ref-p_in)
-                
-                length = n_overlap.min()
+                length = n_overlap
                 mtv = n_ref * length
-                # print(mtv, length)
-                # print((p_ref-p_in), d2)
                 # breakpoint()
                 return jnp.stack((jnp.array([True,True,False]), mtv, n_ref, p_ref, p_in))
 
-            def x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
+            def x_smaller(v1, v2, n1, n2, f1, f2, i, x_overlap):
                 # edge-to-edge contacts
-                
                 i_ref = x_overlap.argmin()
                 n_ref = naxes[i_ref]
                 
@@ -165,29 +159,30 @@ class SeparatingAxis(Solver):
                 length = x_overlap.min()
                 mtv = n_ref * length
                 # import pdb; pdb.set_trace()
-                return jnp.stack((jnp.array([True,False,False]), mtv, n_ref, p_ref, p_in))
+                return jnp.stack((jnp.array([True,False,True]), mtv, n_ref, p_ref, p_in))
                 # import pdb; pdb.set_trace()
-            res = jnp.where(n_overlap.min() < x_overlap.min(), 
-                            n_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap), 
-                            x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap))
+
+            res = jnp.where(
+                    jnp.stack([n1_overlap, n2_overlap]).min() < jnp.stack([x1_overlap, x2_overlap]).min(),
+                    # if face2face
+                    jnp.where(n1_overlap < n2_overlap,
+                        n_smaller(v1, v2, n1, n2, f1, f2, i1, n1_overlap, n1_diff),
+                        n_smaller(v2, v1, n2, n1, f2, f1, i2, n2_overlap, n2_diff)),
+                    # elif edge2dge
+                    jnp.where(x1_overlap < x2_overlap,
+                        x_smaller(v1, v2, n1, n2, f1, f2, i1, x1_overlap),
+                        x_smaller(v2, v1, n2, n1, f2, f1, i2, x2_overlap))
+            )
 
             return res
-        def did_not_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
+        def did_not_overlap():
             return jnp.stack((jnp.array([False]*3), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3)))
-
-        # res = jax.lax.cond(is_overlap, did_overlap, did_not_overlap,
-        #              *(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-        #                 xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs))
 
         res = jnp.where(is_overlap, 
                     did_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
                         xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs),
-                    did_not_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs)
+                    did_not_overlap()
                      )
-        # import pdb;pdb.set_trace()
-        # return res
                 
         (collide_flags, mtvs, nrefs, p_refs, p_ins) = res[0],res[1],res[2],res[3],res[4]
         did_collide = collide_flags[0]
@@ -274,3 +269,45 @@ if __name__ == '__main__':
     print(overlap_all)
     # import pdb;pdb.set_trace()
     
+'''
+def did_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
+            n_left = np1_maxs - np2_mins
+            n_right = np2_maxs - np1_mins
+            n_left_right = jnp.stack([n_left, n_right], axis=1)
+            n_overlap = jnp.min(n_left_right, axis=1)
+
+            x_left = xp1_maxs - xp2_mins
+            x_right = xp2_maxs - xp1_mins
+            x_left_right = jnp.stack([x_left, x_right], axis=1)
+            x_overlap = jnp.min(x_left_right, axis=1)
+            def n_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
+                # face-to-face contacts
+                i_overlap = n_overlap.argmin()
+                Nn1 = len(n1)
+                # naxes was [n1, n2], i offset by on i_overlap number
+                i_ref = jax.lax.cond(i_overlap < Nn1, lambda i: i, lambda i: i-Nn1, i_overlap)
+                n_ref = jax.lax.cond(i_overlap < Nn1, lambda i: n1[i], lambda i: n2[i], i_ref)
+                v_ref = jax.lax.cond(i_overlap < Nn1, lambda i: v1[f1[i]], lambda i: v2[f2[i]], i_ref)
+                ns = jax.lax.cond(i_overlap < Nn1, lambda x: n2, lambda x: n1, None)
+                vs = jax.lax.cond(i_overlap < Nn1, lambda x: v2, lambda x: v1, None)
+                fs = jax.lax.cond(i_overlap < Nn1, lambda x: f2, lambda x: f1, None)
+                cosine_sim = (jnp.broadcast_to(n_ref, (len(ns),1,3)) @ ns[:,:,jnp.newaxis]).squeeze()
+                i_in = jnp.argmin(cosine_sim)
+                # n_in = ns[i_in]
+                v_in = vs[fs[i_in]]
+                p0 = self.closest_point(v_ref[0], v_in)
+                p_ref = self.closest_point(p0, v_ref)
+                p_in = self.closest_point(p_ref, v_in)
+                # p_ref = self.closest_point(p_in, v_ref)
+                # d2 = jnp.dot(p_ref-p_in, n_ref)
+                # l2 = jnp.linalg.norm(p_ref-p_in)
+                
+                length = n_overlap.min()
+                mtv = n_ref * length
+                # print(mtv, length)
+                # print((p_ref-p_in), d2)
+                # breakpoint()
+                return jnp.stack((jnp.array([True,True,False]), mtv, n_ref, p_ref, p_in))
+
+'''

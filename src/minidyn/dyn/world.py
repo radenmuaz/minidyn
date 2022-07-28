@@ -57,7 +57,7 @@ class World:
 
         self.static_masks = static_masks
     
-    def add_ground(self, h=2, w=15, q=None, Kp=1):
+    def add_ground(self, h=4, w=15, q=None, Kp=1):
         body = Body()
         mass = 1e-5
         moment = jnp.eye(3) * mass

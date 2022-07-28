@@ -17,7 +17,7 @@ class CompliantContacts:
     def __init__(self):
         pass
     def __call__(self, world, collision_solver, q, qd):
-        def C_collide(world, q, qd, ib1, ib2):
+        def C_collide(world, q, qd):
             did_collide, face2face, other, mtvs, n_refs, p_refs, p_ins = collision_solver(world, q)
             
             def depth(collide_flag, p_ref, p_in, vec):
@@ -62,7 +62,7 @@ class CompliantContacts:
 
         N = q.size
         J, (C, did_collide, face2face, other,mtvs, n_refs, p_refs, p_ins) = \
-            jax.jacfwd(partial(C_collide, world), argnums=0, has_aux=True)(q, qd, ib1, ib2)
+            jax.jacfwd(partial(C_collide, world), argnums=0, has_aux=True)(q, qd)
         # breakpoint()
         # J, (C, did_collide, face2face, other,mtvs, n_refs, p_refs, p_ins) = \
         #     jax.jacrev(partial(C_collide, world), argnums=0, has_aux=True)(q, qd, ib1, ib2)
