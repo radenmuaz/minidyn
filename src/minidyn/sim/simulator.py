@@ -13,15 +13,16 @@ from wgpu.gui.auto import WgpuCanvas, run
 import pygfx as gfx
 from pygfx.linalg import Vector3, Matrix4, Quaternion
 import trimesh
+import numpy as np
 class PygfxSimulator:
     "View the world"
     def __init__(self, world, dynamics, viz_data=None):
-        self.canvas = WgpuCanvas()
+        self.canvas = WgpuCanvas(max_fps=1/dynamics.dt)
         self.renderer = gfx.renderers.WgpuRenderer(self.canvas)
         self.scene = gfx.Scene()
         self.camera = gfx.PerspectiveCamera(70, 16 / 9)
         # self.camera.position = Vector3(10,10,3)
-        self.camera.position = Vector3(10,10,1)
+        self.camera.position = Vector3(5,5,1)
         self.world = world
         self.dynamics = dynamics
         self.q, self.qd = world.get_init_state()
@@ -43,8 +44,9 @@ class PygfxSimulator:
                         faces=shape.faces)
                     mesh = gfx.Mesh(
                         gfx.trimesh_geometry(trimesh_mesh),
-                        gfx.MeshBasicMaterial(wireframe=True)
-                        # gfx.MeshPhongMaterial(),
+                        # gfx.MeshBasicMaterial(wireframe=True)
+                        gfx.MeshPhongMaterial(shininess=np.random.randint(5,20), emissive=np.random.rand(4)-0.3),
+                        # gfx.MeshPhongMaterial(emissive=(0, 0, 0, 0)),
                     )
                     shapes += [mesh]
                 body2shapes += [shapes]
@@ -74,7 +76,7 @@ class PygfxSimulator:
         self.controls.update_camera(self.camera)
         self.renderer.render(self.scene, self.camera)
         self.canvas.request_draw()
-        print(f'FPS: {1/(time.time()-t0):.2f}\n')
+        print(f'Sim FPS: {1/(time.time()-t0):.2f}\n')
 
         for i, q in enumerate(self.q): print(f'q{i}: ', q)
         print()
@@ -83,7 +85,8 @@ class PygfxSimulator:
         for i, F_c in enumerate(aux[0]): print(f'F_c{i}: ', F_c)
         print()
         print('collisions:',aux[1][1])
-        # if aux[1][1].any(): import pdb;pdb.set_trace()
+        if aux[1][1].any(): print(aux[1][5:])#import pdb;pdb.set_trace()
+        # if aux[1][1].any(): breakpoint()
         # print('Lmult',aux[2])
         # print('J',aux[3].reshape(self.q.shape[0],-1))
         # print('Jd',aux[4].reshape(self.q.shape[0],-1))

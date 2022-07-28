@@ -57,18 +57,19 @@ class World:
 
         self.static_masks = static_masks
     
-    def add_ground(self):
+    def add_ground(self, h=2, w=15, q=None, Kp=1):
         body = Body()
         mass = 1e-5
         moment = jnp.eye(3) * mass
         body.inertia = mdn.dyn.body.Inertia(mass=mass,moment=moment)
         # shape = trimesh.creation.box((100., 100, .1))
-        h = 1.3
-        w = 10.
         shape = trimesh.creation.box((w, w, h))
         # body.add_shape(mdn.col.Shape.from_trimesh(shape))
         body.shapes = [mdn.dyn.body.Shape.from_trimesh(shape)]
-        self.add_body(body, static=True,q=jnp.array([1., 0.0 , 0, 0., 0, 0. , -h/2]))
+        body.shapes[0].Kp = Kp
+        if q is None:
+            q = jnp.array([1., 0.0 , 0, 0., 0, 0. , -h/2])
+        self.add_body(body, static=True, q=q)
         # self.add_body(body, static=True,q=jnp.array([0.999, 0 , 0.04, 0., 0, 0. , -h/2]))
 
     def add_body(self, body, q=None, qd=None, static=False):

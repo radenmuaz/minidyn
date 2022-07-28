@@ -5,6 +5,7 @@ import jax
 from jax import numpy as jnp, random
 from jax import vmap, tree_map,lax
 from jax.tree_util import register_pytree_node_class
+from zmq import has
 
 from minidyn.dyn import integrators
 from minidyn.dyn import collisions
@@ -23,12 +24,13 @@ class LagrangianDynamics(object):
     
     def __call__(self, world: world.World, q, qd, u):
         qdd, aux = self.solve(world, q, qd, u)
-        N = q.size
-        q_vec = jnp.concatenate((q.reshape(N), qd.reshape(N)))
-        qd_vec = jnp.concatenate((qd.reshape(N), qdd.reshape(N)))
-        q_vec_new = self.integrator(q_vec, qd_vec, self.dt)
-        q_new = q_vec_new[:N].reshape(q.shape)
-        qd_new  = q_vec_new[N:].reshape(qd.shape)
+        q_new, qd_new = self.integrator(q, qd, qdd, self.dt)
+        # N = q.size
+        # q_vec = jnp.concatenate((q.reshape(N), qd.reshape(N)))
+        # qd_vec = jnp.concatenate((qd.reshape(N), qdd.reshape(N)))
+        # q_vec_new = self.integrator(q_vec, qd_vec, self.dt)
+        # q_new = q_vec_new[:N].reshape(q.shape)
+        # qd_new  = q_vec_new[N:].reshape(qd.shape)
         # import pdb;pdb.set_trace()
         def norm_quat_part(q):
             return q.at[:4].set(F.quat_norm(q[:4]))
@@ -54,7 +56,7 @@ class LagrangianDynamics(object):
         
         def L(q, qd, u, world):
             T, V = get_energies(q, qd, u, world)
-            return jnp.sum(T) - jnp.sum(V)
+            return jnp.sum(T) - jnp.sum(V), (T, V)
         
         # reference shape and q dot vector
         N = q.size
@@ -63,16 +65,21 @@ class LagrangianDynamics(object):
         u_vec = u.reshape(N, 1)
 
         # Mass, Coriolis, gravity
-        M = jax.hessian(L, 1)(q, qd, u, world).reshape(N, N)
+        M, (T, V) = jax.hessian(L, 1, True)(q, qd, u, world)
+        M = M.reshape(N, N)
+        M = jnp.where(jnp.isnan(M),0,M)
         Minv = jnp.linalg.pinv(M, rcond=1e-20)
-        g = jax.grad(L, 0)(q, qd, u, world).reshape(N, 1)
-        C =  jax.jacfwd(jax.grad(L, 1), 0)(q, qd, u, world).reshape(N, N)
-
+        g = jax.grad(L, 0, True)(q, qd, u, world)[0]
+        g = g.reshape(N, 1)
+        C = jax.jacfwd(jax.grad(L, 1, True), 0)(q, qd, u, world)[0]
+        C = C.reshape(N, N)
+        C = jnp.where(jnp.isnan(C),0,C)
+        # breakpoint()
         
         F_c, colaux = self.contact_solver(world, self.collision_solver, q, qd)
         F_c_vec = F_c.reshape(N, 1)
 
-        qdd_vec = Minv @ ( g - C @ qd_vec - F_c_vec)
+        qdd_vec = Minv @ ( g - C @ qd_vec + F_c_vec)
         qdd = qdd_vec.reshape(qd.shape)
         mask = jnp.array(world.static_masks)[:, jnp.newaxis]
         qdd = jnp.where(mask == True, 0, qdd)

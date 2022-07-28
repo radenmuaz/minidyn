@@ -48,15 +48,154 @@ class SeparatingAxis(Solver):
         # import pdb; pdb.set_trace()
 
         # with jax.disable_jit():
-        (collide_flags, mtvs, nrefs, p_refs, p_ins) = \
+        (did_collide, face2face, other, mtvs, nrefs, p_refs, p_ins) = \
           jax.vmap(self.solve)(q1, q2, v1, v2, n1, n2, f1, f2)
-        for var in (collide_flags, mtvs, nrefs, p_refs, p_ins):
+        for var in (did_collide, face2face, other, mtvs, nrefs, p_refs, p_ins):
             var = jnp.stack(var)
         # import pdb;pdb.set_trace()
         
-        return (collide_flags, mtvs, nrefs, p_refs, p_ins)
+        return (did_collide, face2face, other, mtvs, nrefs, p_refs, p_ins)
 
     
+    
+    def solve(self, q1, q2, v1, v2, n1, n2, f1, f2):
+        
+        v1 = F.vec2world(v1, F.q2tf(q1)) 
+        v2 = F.vec2world(v2, F.q2tf(q2)) 
+        
+        # for normals, zero translate
+        n1 = F.vec2world(n1, F.q2tf(jnp.array([*q1[:4], 0, 0, 0])))
+        n2 = F.vec2world(n2, F.q2tf(jnp.array([*q2[:4], 0, 0, 0])))
+
+        naxes = jnp.concatenate([n1, n2], axis=0)
+        def build_edge_vec(v):
+            return F.vec_normalize(v - jnp.roll(v,-1,0))
+            # return v - jnp.roll(v,-1,0)
+        e1 = build_edge_vec(v1)
+        e2 = build_edge_vec(v2)
+        xaxes = jnp.reshape(jnp.cross(e1[:, jnp.newaxis, :], e2), (-1, 3))
+        idxzeros = jnp.all(xaxes== 0, axis=1).reshape(-1, 1)
+        replace = jnp.array([1,0,0]).tile((len(xaxes),1))
+        # import pdb;pdb.set_trace()
+        xaxes = jnp.where(idxzeros, replace, xaxes)
+        # idxzeros = jnp.broadcast_to(idxzeros, (idxzeros.shape[0], 3))
+        # @partial(jax.jit, static_argnums=(0,))
+
+        # xaxes[idxzeros,:] = jnp.array([1.,0,0])
+        # xaxes = xaxes[~jnp.all(xaxes== 0, axis=1)] # prune zero vectors
+        xaxes = F.vec_normalize(xaxes)
+        # axes = jnp.concatenate([naxes, xaxes], axis=0)
+
+
+        np1 = naxes @ v1.T
+        np2 = naxes @ v2.T
+        np1_maxs = jnp.max(np1, axis=1)
+        np1_mins = jnp.min(np1, axis=1)
+        np2_maxs = jnp.max(np2, axis=1)
+        np2_mins = jnp.min(np2, axis=1)
+
+        xp1 = xaxes @ v1.T
+        xp2 = xaxes @ v2.T
+        xp1_maxs = jnp.max(xp1, axis=1)
+        xp1_mins = jnp.min(xp1, axis=1)
+        xp2_maxs = jnp.max(xp2, axis=1)
+        xp2_mins = jnp.min(xp2, axis=1)
+        
+        is_n_overlap = jnp.logical_and(np1_mins < np2_maxs, np1_maxs > np2_mins)
+        is_x_overlap = jnp.logical_and(xp1_mins < xp2_maxs, xp1_maxs > xp2_mins)
+        is_overlap = jnp.logical_and(is_n_overlap.all(), is_x_overlap.all())
+
+        def did_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
+            n_left = np1_maxs - np2_mins
+            n_right = np2_maxs - np1_mins
+            n_left_right = jnp.stack([n_left, n_right], axis=1)
+            n_overlap = jnp.min(n_left_right, axis=1)
+
+            x_left = xp1_maxs - xp2_mins
+            x_right = xp2_maxs - xp1_mins
+            x_left_right = jnp.stack([x_left, x_right], axis=1)
+            x_overlap = jnp.min(x_left_right, axis=1)
+            def n_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
+                # face-to-face contacts
+                i_overlap = n_overlap.argmin()
+                Nn1 = len(n1)
+                # naxes was [n1, n2], i offset by on i_overlap number
+                i_ref = jax.lax.cond(i_overlap < Nn1, lambda i: i, lambda i: i-Nn1, i_overlap)
+                n_ref = jax.lax.cond(i_overlap < Nn1, lambda i: n1[i], lambda i: n2[i], i_ref)
+                v_ref = jax.lax.cond(i_overlap < Nn1, lambda i: v1[f1[i]], lambda i: v2[f2[i]], i_ref)
+                ns = jax.lax.cond(i_overlap < Nn1, lambda x: n2, lambda x: n1, None)
+                vs = jax.lax.cond(i_overlap < Nn1, lambda x: v2, lambda x: v1, None)
+                fs = jax.lax.cond(i_overlap < Nn1, lambda x: f2, lambda x: f1, None)
+                cosine_sim = (jnp.broadcast_to(n_ref, (len(ns),1,3)) @ ns[:,:,jnp.newaxis]).squeeze()
+                i_in = jnp.argmin(cosine_sim)
+                # n_in = ns[i_in]
+                v_in = vs[fs[i_in]]
+                p0 = self.closest_point(v_ref[0], v_in)
+                p_ref = self.closest_point(p0, v_ref)
+                p_in = self.closest_point(p_ref, v_in)
+                # p_ref = self.closest_point(p_in, v_ref)
+                # d2 = jnp.dot(p_ref-p_in, n_ref)
+                # l2 = jnp.linalg.norm(p_ref-p_in)
+                
+                length = n_overlap.min()
+                mtv = n_ref * length
+                # print(mtv, length)
+                # print((p_ref-p_in), d2)
+                # breakpoint()
+                return jnp.stack((jnp.array([True,True,False]), mtv, n_ref, p_ref, p_in))
+
+            def x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
+                # edge-to-edge contacts
+                
+                i_ref = x_overlap.argmin()
+                n_ref = naxes[i_ref]
+                
+                e1s, e1e = v1[i_ref], v1[i_ref-1]
+                e2s, e2e = v2[i_ref], v2[i_ref-1]
+                d1 = F.vec_normalize((e1e - e1s)[jnp.newaxis,:]).squeeze()
+                d2 = F.vec_normalize((e2e - e2s)[jnp.newaxis,:]).squeeze()
+                d2_perp = jnp.cross(d2, n_ref)
+                d2_perp = F.vec_normalize((d2_perp)[jnp.newaxis,:]).squeeze()
+
+                m = (jnp.dot(-d2_perp, (e1s-e2s)) / jnp.dot(d2_perp, d1))
+                p_ref = e1s + m * d1
+                p_in = p_ref
+
+                length = x_overlap.min()
+                mtv = n_ref * length
+                # import pdb; pdb.set_trace()
+                return jnp.stack((jnp.array([True,False,False]), mtv, n_ref, p_ref, p_in))
+                # import pdb; pdb.set_trace()
+            res = jnp.where(n_overlap.min() < x_overlap.min(), 
+                            n_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap), 
+                            x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap))
+
+            return res
+        def did_not_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
+            return jnp.stack((jnp.array([False]*3), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3)))
+
+        # res = jax.lax.cond(is_overlap, did_overlap, did_not_overlap,
+        #              *(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+        #                 xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs))
+
+        res = jnp.where(is_overlap, 
+                    did_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs),
+                    did_not_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
+                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs)
+                     )
+        # import pdb;pdb.set_trace()
+        # return res
+                
+        (collide_flags, mtvs, nrefs, p_refs, p_ins) = res[0],res[1],res[2],res[3],res[4]
+        did_collide = collide_flags[0]
+        face2face = collide_flags[1]
+        other = collide_flags[2]
+        # (collide_flags, mtvs, nrefs, p_refs, p_ins) = jnp.split(res, 5)
+        return  (did_collide, face2face, other, mtvs, nrefs, p_refs, p_ins)
+
     def closest_point(self, p, ve, eps=1e-9):
         result = jnp.zeros(3)[jnp.newaxis, :]
         p = p[jnp.newaxis, :]
@@ -121,142 +260,6 @@ class SeparatingAxis(Solver):
         return result.squeeze()
 
   
-    def solve(self, q1, q2, v1, v2, n1, n2, f1, f2):
-        
-        v1 = F.vec2world(v1, F.q2tf(q1)) 
-        v2 = F.vec2world(v2, F.q2tf(q2)) 
-        
-        # for normals, zero translate
-        n1 = F.vec2world(n1, F.q2tf(jnp.array([*q1[:4], 0, 0, 0])))
-        n2 = F.vec2world(n2, F.q2tf(jnp.array([*q2[:4], 0, 0, 0])))
-
-        naxes = jnp.concatenate([n1, n2], axis=0)
-        def build_edge_vec(v):
-            return F.vec_normalize(v - jnp.roll(v,-1,0))
-            # return v - jnp.roll(v,-1,0)
-        e1 = build_edge_vec(v1)
-        e2 = build_edge_vec(v2)
-        xaxes = jnp.reshape(jnp.cross(e1[:, jnp.newaxis, :], e2), (-1, 3))
-        idxzeros = jnp.all(xaxes== 0, axis=1).reshape(-1, 1)
-        replace = jnp.array([1,0,0]).tile((len(xaxes),1))
-        # import pdb;pdb.set_trace()
-        xaxes = jnp.where(idxzeros, replace, xaxes)
-        # idxzeros = jnp.broadcast_to(idxzeros, (idxzeros.shape[0], 3))
-        # @partial(jax.jit, static_argnums=(0,))
-
-        # xaxes[idxzeros,:] = jnp.array([1.,0,0])
-        # xaxes = xaxes[~jnp.all(xaxes== 0, axis=1)] # prune zero vectors
-        xaxes = F.vec_normalize(xaxes)
-        # axes = jnp.concatenate([naxes, xaxes], axis=0)
-
-
-        np1 = naxes @ v1.T
-        np2 = naxes @ v2.T
-        np1_maxs = jnp.max(np1, axis=1)
-        np1_mins = jnp.min(np1, axis=1)
-        np2_maxs = jnp.max(np2, axis=1)
-        np2_mins = jnp.min(np2, axis=1)
-
-        xp1 = xaxes @ v1.T
-        xp2 = xaxes @ v2.T
-        xp1_maxs = jnp.max(xp1, axis=1)
-        xp1_mins = jnp.min(xp1, axis=1)
-        xp2_maxs = jnp.max(xp2, axis=1)
-        xp2_mins = jnp.min(xp2, axis=1)
-        
-        is_n_overlap = jnp.logical_and(np1_mins < np2_maxs, np1_maxs > np2_mins)
-        is_x_overlap = jnp.logical_and(xp1_mins < xp2_maxs, xp1_maxs > xp2_mins)
-        is_overlap = jnp.logical_and(is_n_overlap.all(), is_x_overlap.all())
-
-        def did_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
-            n_left = jnp.abs(np1_mins - np2_maxs)
-            n_right = jnp.abs(np1_maxs - np2_mins)
-            n_left_right = jnp.stack([n_left, n_right], axis=1)
-            n_overlap = jnp.min(n_left_right, axis=1)
-
-            x_left = jnp.abs(xp1_mins - xp2_maxs)
-            x_right = jnp.abs(xp1_maxs - xp2_mins)
-            x_left_right = jnp.stack([x_left, x_right], axis=1)
-            x_overlap = jnp.min(x_left_right, axis=1)
-            def n_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
-                # face-to-face contacts
-                length = n_overlap.min()
-                i_overlap = n_overlap.argmin()
-                Nn1 = len(n1)
-                # naxes was [n1, n2], i offset by on i_overlap number
-                i_ref = jax.lax.cond(i_overlap < Nn1, lambda i: i, lambda i: i-Nn1, i_overlap)
-                n_ref = jax.lax.cond(i_overlap < Nn1, lambda i: n1[i], lambda i: n2[i], i_ref)
-                v_ref = jax.lax.cond(i_overlap < Nn1, lambda i: v1[f1[i]], lambda i: v2[f2[i]], i_ref)
-                ns = jax.lax.cond(i_overlap < Nn1, lambda x: n2, lambda x: n1, None)
-                vs = jax.lax.cond(i_overlap < Nn1, lambda x: v2, lambda x: v1, None)
-                fs = jax.lax.cond(i_overlap < Nn1, lambda x: f2, lambda x: f1, None)
-                cosine_sim = (jnp.broadcast_to(n_ref, (len(ns),1,3)) @ ns[:,:,jnp.newaxis]).squeeze()
-                i_in = jnp.argmin(cosine_sim)
-                # n_in = ns[i_in]
-                v_in = vs[fs[i_in]]
-                p0 = self.closest_point(v_ref[0], v_in)
-                p_ref = self.closest_point(p0, v_ref)
-                p_in = self.closest_point(p_ref, v_in)
-                # p_ref = self.closest_point(p_in, v_ref)
-                # d2 = jnp.dot(p_ref-p_in, n_ref)
-                # l2 = jnp.linalg.norm(p_ref-p_in)
-                
-                mtv = n_ref * length
-                # print(mtv, length)
-                # print((p_ref-p_in), d2)
-                # import pdb; pdb.set_trace()
-                return jnp.stack((jnp.array([True]*3), mtv, n_ref, p_ref, p_in))
-
-            def x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
-                # edge-to-edge contacts
-                
-                i_ref = x_overlap.argmin()
-                n_ref = naxes[i_ref]
-                
-                e1s, e1e = v1[i_ref], v1[i_ref-1]
-                e2s, e2e = v2[i_ref], v2[i_ref-1]
-                d1 = F.vec_normalize((e1e - e1s)[jnp.newaxis,:]).squeeze()
-                d2 = F.vec_normalize((e2e - e2s)[jnp.newaxis,:]).squeeze()
-                d2_perp = jnp.cross(d2, n_ref)
-                d2_perp = F.vec_normalize((d2_perp)[jnp.newaxis,:]).squeeze()
-
-                m = (jnp.dot(-d2_perp, (e1s-e2s)) / jnp.dot(d2_perp, d1))
-                p_ref = e1s + m * d1
-                p_in = p_ref
-
-                length = x_overlap.min()
-                mtv = n_ref * length
-                # import pdb; pdb.set_trace()
-                return jnp.stack((jnp.array([True]*3), mtv, n_ref, p_ref, p_in))
-                # import pdb; pdb.set_trace()
-            res = jnp.where(n_overlap.min() < x_overlap.min(), 
-                            n_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap), 
-                            x_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap))
-
-            return res
-        def did_not_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
-            return jnp.stack((jnp.array([False]*3), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3), jnp.zeros(3)))
-
-        # res = jax.lax.cond(is_overlap, did_overlap, did_not_overlap,
-        #              *(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-        #                 xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs))
-
-        res = jnp.where(is_overlap, 
-                    did_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs),
-                    did_not_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs)
-                     )
-        # import pdb;pdb.set_trace()
-        # return res
-                
-        (collide_flags, mtvs, nrefs, p_refs, p_ins) = res[0],res[1],res[2],res[3],res[4]
-        collide_flags = (collide_flags==1).all()
-        # (collide_flags, mtvs, nrefs, p_refs, p_ins) = jnp.split(res, 5)
-        return  (collide_flags, mtvs, nrefs, p_refs, p_ins)
-
 if __name__ == '__main__':
     solver = SeparatingAxis()
     q1 = jnp.array([1, 0, 0, 0., 0, 0, 0]) 

@@ -18,73 +18,63 @@ class CompliantContacts:
         pass
     def __call__(self, world, collision_solver, q, qd):
         def C_collide(world, q, qd, ib1, ib2):
-            collide_flags, mtvs, n_refs, p_refs, p_ins = collision_solver(world, q)
-            v_ref = qd[ib1,4:]
-            v_in = qd[ib2,4:]
-            v = v_ref
-            v = jnp.where((v==0).all(1)[:,jnp.newaxis], v_in, v) # skip to use incidence vel if 0
-            def to_plane(v, n):
-                return v - n*(jnp.dot(v, n) / jnp.linalg.norm(n))
-            ux = jax.vmap(to_plane)(v, n_refs)
-            # uy = jnp.cross(n_refs, ux)
+            did_collide, face2face, other, mtvs, n_refs, p_refs, p_ins = collision_solver(world, q)
+            
             def depth(collide_flag, p_ref, p_in, vec):
                 return jnp.where(collide_flag, jnp.dot(p_ref-p_in, vec), 0)
-            # import pdb;pdb.set_trace()
-            C_pen = jax.vmap(depth)(collide_flags, p_refs, p_ins, n_refs)
-            C_fric = jax.vmap(depth)(collide_flags, p_refs, p_ins, ux)
-            # C_fricy = jax.vmap(depth)(collide_flags, p_refs, p_ins, uy)
+            C_pen = jax.vmap(depth)(did_collide, p_refs, p_ins, n_refs)
+
+            # v_ref = qd[ib1,4:]
+            # v_in = qd[ib2,4:]
+            # v = v_ref
+            # v = jnp.where((v==0).all(1)[:,jnp.newaxis], v_in, v) # skip to use incidence vel if 0
+            # def to_plane(v, n):
+            #     return v - n*(jnp.dot(v, n) / jnp.linalg.norm(n))
+            # ux = jax.vmap(to_plane)(v, n_refs)
+            # uy = jnp.cross(n_refs, ux)
+            # C_fric = jax.vmap(depth)(did_collide, p_refs, p_ins, ux)
+            # C_fricy = jax.vmap(depth)(did_collide, p_refs, p_ins, uy)
+
             # C = jnp.concatenate([C_pen, C_fricx, C_fricy])
             # C = jnp.stack([C_pen, C_fric])
-            C = C_pen#jnp.stack([C_pen, C_fric])
-            return C, (C, collide_flags, mtvs, n_refs, p_refs, p_ins) # hax_aux tuple
+            C = C_pen
+            return C, (C, did_collide, face2face, other,mtvs, n_refs, p_refs, p_ins) # hax_aux tuple
         
-        # ib, s = [], []
-        # q1, q2 == [], []
         s1, s2 = [], []
         ib1, ib2 = [], []
-        # ib1ib2 = []
 
         for (i1, i2), (bs1, bs2) in zip(world.body_pairs_mat_idxs, world.shape_pairs_mat):
             ib1 += [i1]
             ib2 += [i2]
-            # ib1ib2 += [i1, i2]
             s1 += [bs1]
             s2 += [bs2]
-            # ib += [ib1, ib2]
-            # s += [bs1, bs2]
-            # q1 += q[ib1][jnp.newaxis,:]
-            # q2 += q[ib2][jnp.newaxis,:]
-        
+
         def stack_attr(pytrees, attr):
             return  tree_map( lambda *values: 
                 jnp.stack(values, axis=0), *[getattr(t, attr) for t in pytrees])
 
-        # q1 = jnp.stack(q1)
-        # q2 = jnp.stack(q2)
         Kp1 = stack_attr(s1, 'Kp')
         Kp2 = stack_attr(s2, 'Kp')
         mu1 = stack_attr(s1, 'mu')
         mu2 = stack_attr(s2, 'mu')
-        # ib = jnp.array(ib)
         ib1 = jnp.array(ib1)
         ib2 = jnp.array(ib2)
 
         N = q.size
-        J, (C, collide_flags, mtvs, n_refs, p_refs, p_ins) = \
+        J, (C, did_collide, face2face, other,mtvs, n_refs, p_refs, p_ins) = \
             jax.jacfwd(partial(C_collide, world), argnums=0, has_aux=True)(q, qd, ib1, ib2)
-        # import pdb;pdb.set_trace()
+        # breakpoint()
+        # J, (C, did_collide, face2face, other,mtvs, n_refs, p_refs, p_ins) = \
+        #     jax.jacrev(partial(C_collide, world), argnums=0, has_aux=True)(q, qd, ib1, ib2)
         # J = J.reshape(J.shape[0],N) # 3constraint * q.size
         J = J.reshape(J.shape[0], *q.shape)
 
         
 
         def get_F(collide_flag, J, C, ib1, ib2, Kp1, Kp2, mu1, mu2):
-            # import pdb;pdb.set_trace()
-
             depth = C
             F1 = depth*Kp1 * J[ib1, :]
             F2 = depth*Kp2 * J[ib2, :]
-            # F = jnp.concatenate(F1, F2)
             F = jnp.vstack((F1,F2)) # (2, 7)
             F = F[jnp.newaxis,::] # (1, 2, 7)
             # mag_Fn = Lmult[0]
@@ -95,13 +85,13 @@ class CompliantContacts:
             F = F.squeeze(0)
             F1, F2 = F[0,:], F[1,:]
             return carry_F.at[ib1].add(F1).at[ib2].add(F2), None
-        Fs = jax.vmap(get_F)(collide_flags, J, C, ib1, ib2, Kp1, Kp2, mu1, mu2)
+        Fs = jax.vmap(get_F)(did_collide, J, C, ib1, ib2, Kp1, Kp2, mu1, mu2)
         F, _ = jax.lax.scan(arrange_F, jnp.zeros(q.shape), (Fs, ib1, ib2))
         # import pdb;pdb.set_trace()
 
 
         
-        aux = (C, collide_flags, mtvs, n_refs, p_refs, p_ins)
+        aux = (C, did_collide, face2face, other, mtvs, n_refs, p_refs, p_ins, J)
         return F, aux
 
         
@@ -111,7 +101,7 @@ class RigidContacts:
     def __call__(self, world, qs, qds):
 
         def C_collide(world, qs):
-            collide_flags, mtvs, n_refs, p_refs, p_ins = self.collision_solver(world, qs)
+            did_collide, mtvs, n_refs, p_refs, p_ins = self.collision_solver(world, qs)
             ux = n_refs - jnp.dot(n_refs.squeeze(), n_refs.squeeze())
             ux = ux / jnp.linalg.norm(ux)
             uy = jnp.cross(n_refs, ux)
@@ -125,10 +115,10 @@ class RigidContacts:
             
             # import pdb;pdb.set_trace()
 
-            C_pen = jax.vmap(depth)(collide_flags, p_refs, p_ins, n_refs)
+            C_pen = jax.vmap(depth)(did_collide, p_refs, p_ins, n_refs)
             return C_pen
-            # C_fricx = jax.vmap(depth)(collide_flags, p_refs, p_ins, ux)
-            # C_fricy = jax.vmap(depth)(collide_flags, p_refs, p_ins, uy)
+            # C_fricx = jax.vmap(depth)(did_collide, p_refs, p_ins, ux)
+            # C_fricy = jax.vmap(depth)(did_collide, p_refs, p_ins, uy)
             return jnp.concatenate([C_pen, C_fricx, C_fricy])
         def C_collide_d(world, qs, qds):
             J = jax.jacfwd(partial(C_collide, world))(qs)
@@ -167,9 +157,9 @@ class CompliantContacts:
     def __init__(self):
         pass
     def __call__(self, world, collision_solver, q, qd):
-        collide_flags, mtvs, n_refs, p_refs, p_ins = collision_solver(world, q)
+        did_collide, mtvs, n_refs, p_refs, p_ins = collision_solver(world, q)
 
-        collide_flags = collide_flags[world.body_pairs_idxs,:].squeeze()
+        did_collide = did_collide[world.body_pairs_idxs,:].squeeze()
         mtvs = mtvs[world.body_pairs_idxs,:].squeeze()
         n_refs = n_refs[world.body_pairs_idxs,:].squeeze()
         # import pdb;pdb.set_trace()
@@ -206,7 +196,7 @@ class CompliantContacts:
             F, ib = F_and_ib
             Fe = jnp.array([0, 0, 0 ,0, *F])
             return carry_F.at[ib].add(Fe), Fe
-        F = jax.vmap(get_F)(collide_flags, p_refs, p_ins, n_refs, Kp)
+        F = jax.vmap(get_F)(did_collide, p_refs, p_ins, n_refs, Kp)
         F, _ = jax.lax.scan(arrange_F, jnp.zeros(q.shape), (F, ib))
 
 '''

@@ -84,12 +84,14 @@ def quat2mat(quat, eps=1e-9):
     return jnp.where(Nq<eps, jnp.eye(3), get_mat(w, x, y, z, Nq))
     # return  get_mat(w, x, y, z, Nq)
     
-
+def quat_inv(quat):
+    return cat((quat[0],quat[1:]*-1)) / (quat.T@quat)
 
 def q2tf(q: jnp.array):
     R = quat2mat(quat_norm(q[:4]))
     T = q[4:].reshape(3, 1)
     B = jnp.array((0., 0., 0., 1.)).reshape(1, 4)
+    # breakpoint()
     return cat((cat((R, T),1), B),0)
 
 def qqd2v(q, qdot):
@@ -149,5 +151,3 @@ def quatquatdot2angvel(quat, quatdot):
 def quatangvel2quatdot(quat, angvel):
     return vjac_quatdot(quat) @ angvel
 
-def quat_inv(quat):
-    return cat((quat[0],quat[1:]*-1)) / (quat@quat)
