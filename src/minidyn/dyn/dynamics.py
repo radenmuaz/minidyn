@@ -40,9 +40,9 @@ class LagrangianDynamics(object):
             vs = jax.vmap(F.qqd2v)(q, qd)
             Ts = jax.vmap(F.kinetic_energy)(Is, vs)
             g = world.gravity.reshape(1,3)
-            # mask = jnp.array(world.static_masks).tile((3,1)).T
+            static = jnp.array(world.static_flags).tile((3,1)).T
             gs = jnp.tile(g.reshape(1,3), len(tfs)).reshape(len(tfs), 3)
-            # gs = jnp.where(mask == True, 0, gs)
+            gs = jnp.where(static == True, 0, gs)
             Vs = jax.vmap(F.potential_energy)(Is, tfs, gs)
             return Ts, Vs
         
@@ -82,14 +82,13 @@ class LagrangianDynamics(object):
             Kinv = jnp.linalg.pinv(K)
             # Kinv = jnp.linalg.inv(K+jnp.eye(7,7)*1e-9)
             a = 1
-            # Lmult = Kinv @ (J@Minv@(u_vec-g) + (Jd@qd_vec)
+            Lmult = Kinv @ (J@Minv@(u_vec-g) + (Jd@qd_vec))
             # breakpoint()
-            Lmult = Kinv @ (J@Minv@(u_vec-g) + (Jd+2*a*J)@qd_vec + (a^2)*C)
-            print('J',Jo)
-            print('Jd',Jdo)
-            print('Cd',Cd)
-            if (Jd@qd_vec).sum()>0:
-                breakpoint()
+            # Lmult = Kinv @ (J@Minv@(u_vec-g) + (Jd+2*a*J)@qd_vec + (a^2)*C)
+            jax.debug.print('J {x}',x=Jo)
+            jax.debug.print('Jd {x}',x=Jdo)
+            jax.debug.print('Cd {x}',x=Cdo)
+            # if (Jd@qd_vec).sum()>0:breakpoint()
             # def true(x): jax.debug.breakpoint()
             # def false(x): pass
             # jax.lax.cond((Jd@qd_vec).sum()>0, true, false, None)
@@ -104,11 +103,15 @@ class LagrangianDynamics(object):
         Fs += [F_c_vec]
 
         qdd_vec = Minv @ (g - sum(Fs))
+        jax.debug.print('qdd {x}',x=qdd_vec)
+        jax.debug.print('Minv {x}',x=Minv)
+        jax.debug.print('g {x}',x=g)
+        jax.debug.print('Fs {x}',x=Fs)
         # qdd_vec = Minv @ ( g - C @ qd_vec - F_c_vec)
         # qdd_vec = Minv @ ( g - C @ qd_vec + F_c_vec)
         qdd = qdd_vec.reshape(qd.shape)
-        # mask = jnp.array(world.static_masks)[:, jnp.newaxis]
-        # qdd = jnp.where(mask == True, 0, qdd)
+        static= jnp.array(world.static_flags)[:, jnp.newaxis]
+        qdd = jnp.where(static == True, 0, qdd)
 
 
 
