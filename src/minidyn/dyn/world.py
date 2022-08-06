@@ -35,7 +35,7 @@ class World:
                     body_pairs_mat_idxs=[], shape_pairs_mat_idxs=[],
                     body_pairs=[], shape_pairs=[],
                     body_pairs_mat=[], shape_pairs_mat=[],
-                    static_masks=[]):
+                    ):
         self.root = root
         self.joints = joints
         self.bodies = bodies
@@ -55,7 +55,6 @@ class World:
         self.shape_pairs_mat_idxs = shape_pairs_mat_idxs 
         
 
-        self.static_masks = static_masks
     
     def add_ground(self, h=4, w=15, q=None, Kp=1):
         body = Body()
@@ -69,10 +68,10 @@ class World:
         body.shapes[0].Kp = Kp
         if q is None:
             q = jnp.array([1., 0.0 , 0, 0., 0, 0. , -h/2])
-        self.add_body(body, static=True, q=q)
+        # self.add_body(body, static=True, q=q)
         # self.add_body(body, static=True,q=jnp.array([0.999, 0 , 0.04, 0., 0, 0. , -h/2]))
 
-    def add_body(self, body, q=None, qd=None, static=False):
+    def add_body(self, body, q=None, qd=None):
         q = q if q is not None else jnp.zeros(7).at[0].set(1)
         # qd = qd if qd is not None else jnp.zeros(7).at[0].set(1e-18)
         qd = qd if qd is not None else jnp.zeros(7).at[0].set(1e-9)
@@ -94,11 +93,11 @@ class World:
             self.shape_pairs_mat += [[j, k] for j in body.shapes for k in b.shapes]
 
         self.bodies += [body,]
-        self.static_masks += [static]
+        # self.static_masks += [static]
         
         
     
-    def add_joint(self, joint, body, pred_body):
+    def add_joint(self, joint):
         self.joints += [joint,]
     
     def get_init_state(self):
@@ -121,7 +120,6 @@ class World:
                     self.shape_pairs,
                     self.body_pairs_mat,
                     self.shape_pairs_mat,
-                    self.static_masks
                     )
         aux_data = None
         return (children, aux_data)

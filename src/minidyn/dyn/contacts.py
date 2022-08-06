@@ -4,7 +4,8 @@ from functools import partial
 import jax
 from jax import numpy as jnp, random
 from jax.numpy import concatenate as cat
-from jax import vmap, tree_map,lax
+# from jax import vmap, tree_map,lax
+from jax.tree_util import tree_map
 from jax.tree_util import register_pytree_node_class
 from pyparsing import col
 
@@ -24,15 +25,15 @@ class CompliantContacts:
                 return jnp.where(collide_flag, jnp.dot(p_ref-p_in, vec), 0)
             C_pen = jax.vmap(depth)(did_collide, p_refs, p_ins, n_refs)
 
-            # v_ref = qd[ib1,4:]
-            # v_in = qd[ib2,4:]
-            # v = v_ref
-            # v = jnp.where((v==0).all(1)[:,jnp.newaxis], v_in, v) # skip to use incidence vel if 0
-            # def to_plane(v, n):
-            #     return v - n*(jnp.dot(v, n) / jnp.linalg.norm(n))
-            # ux = jax.vmap(to_plane)(v, n_refs)
+            v_ref = qd[ib1,4:]
+            v_in = qd[ib2,4:]
+            v = -v_ref
+            v = jnp.where((v==0).all(1)[:,jnp.newaxis], -v_in, v) # skip to use incidence vel if 0
+            def to_plane(v, n):
+                return v - n*(jnp.dot(v, n) / jnp.linalg.norm(n))
+            u_ref = jax.vmap(to_plane)(v, n_refs)
+            C_fric = jax.vmap(depth)(did_collide, p_refs, p_ins, u_ref)
             # uy = jnp.cross(n_refs, ux)
-            # C_fric = jax.vmap(depth)(did_collide, p_refs, p_ins, ux)
             # C_fricy = jax.vmap(depth)(did_collide, p_refs, p_ins, uy)
 
             # C = jnp.concatenate([C_pen, C_fricx, C_fricy])
@@ -52,6 +53,7 @@ class CompliantContacts:
         def stack_attr(pytrees, attr):
             return  tree_map( lambda *values: 
                 jnp.stack(values, axis=0), *[getattr(t, attr) for t in pytrees])
+        # breakpoint()
 
         Kp1 = stack_attr(s1, 'Kp')
         Kp2 = stack_attr(s2, 'Kp')
@@ -104,28 +106,15 @@ class RigidContacts:
             did_collide, mtvs, n_refs, p_refs, p_ins = self.collision_solver(world, qs)
             ux = n_refs - jnp.dot(n_refs.squeeze(), n_refs.squeeze())
             ux = ux / jnp.linalg.norm(ux)
-            uy = jnp.cross(n_refs, ux)
             def depth(collide_flag, p_ref, p_in, vec):
-                # return jnp.array([0])
-                # print(collide_flag)
-                # return jnp.where(collide_flag, jnp.dot(p_in-p_ref, vec), 0)
-                # print('depth',jnp.dot(p_ref-p_in, vec))
                 return jnp.where(collide_flag, jnp.dot(p_ref-p_in, vec), 0)
             
-            
-            # import pdb;pdb.set_trace()
-
             C_pen = jax.vmap(depth)(did_collide, p_refs, p_ins, n_refs)
             return C_pen
-            # C_fricx = jax.vmap(depth)(did_collide, p_refs, p_ins, ux)
-            # C_fricy = jax.vmap(depth)(did_collide, p_refs, p_ins, uy)
             return jnp.concatenate([C_pen, C_fricx, C_fricy])
         def C_collide_d(world, qs, qds):
             J = jax.jacfwd(partial(C_collide, world))(qs)
-            # import pdb;pdb.set_trace()
             J = J.reshape(1,N)
-            # return (J.squeeze()*qds)
-            # import pdb;pdb.set_trace()
             return (J.squeeze()@qds.reshape(N,1))
             # return (J*qds).sum()
 

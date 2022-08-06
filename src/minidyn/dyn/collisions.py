@@ -6,7 +6,7 @@ from jax.tree_util import register_pytree_node_class
 from functools import partial
 import trimesh
 import minidyn as mdn
-from jax import vmap, tree_map,lax
+from jax.tree_util import tree_map
 
 class Solver:
     pass
@@ -28,8 +28,8 @@ class SeparatingAxis(Solver):
         #         s2 += [bs2]
         q1, q2, s1, s2 = [], [], [], []
         for (ib1, ib2), (bs1, bs2) in zip(world.body_pairs_mat_idxs, world.shape_pairs_mat):
-            q1 += q[ib1][jnp.newaxis,:]
-            q2 += q[ib2][jnp.newaxis,:]
+            q1 += [q[ib1]]#[jnp.newaxis,:]]
+            q2 += [q[ib2]]#[jnp.newaxis,:]]
             s1 += [bs1]
             s2 += [bs2]
         # import pdb;pdb.set_trace()
@@ -269,45 +269,3 @@ if __name__ == '__main__':
     print(overlap_all)
     # import pdb;pdb.set_trace()
     
-'''
-def did_overlap(v1, v2, n1, n2, f1, f2, naxes, np1_mins, np1_maxs, np2_mins, np2_maxs,
-                        xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
-            n_left = np1_maxs - np2_mins
-            n_right = np2_maxs - np1_mins
-            n_left_right = jnp.stack([n_left, n_right], axis=1)
-            n_overlap = jnp.min(n_left_right, axis=1)
-
-            x_left = xp1_maxs - xp2_mins
-            x_right = xp2_maxs - xp1_mins
-            x_left_right = jnp.stack([x_left, x_right], axis=1)
-            x_overlap = jnp.min(x_left_right, axis=1)
-            def n_smaller(v1, v2, n1, n2, f1, f2, naxes, n_overlap, xaxes, x_overlap):
-                # face-to-face contacts
-                i_overlap = n_overlap.argmin()
-                Nn1 = len(n1)
-                # naxes was [n1, n2], i offset by on i_overlap number
-                i_ref = jax.lax.cond(i_overlap < Nn1, lambda i: i, lambda i: i-Nn1, i_overlap)
-                n_ref = jax.lax.cond(i_overlap < Nn1, lambda i: n1[i], lambda i: n2[i], i_ref)
-                v_ref = jax.lax.cond(i_overlap < Nn1, lambda i: v1[f1[i]], lambda i: v2[f2[i]], i_ref)
-                ns = jax.lax.cond(i_overlap < Nn1, lambda x: n2, lambda x: n1, None)
-                vs = jax.lax.cond(i_overlap < Nn1, lambda x: v2, lambda x: v1, None)
-                fs = jax.lax.cond(i_overlap < Nn1, lambda x: f2, lambda x: f1, None)
-                cosine_sim = (jnp.broadcast_to(n_ref, (len(ns),1,3)) @ ns[:,:,jnp.newaxis]).squeeze()
-                i_in = jnp.argmin(cosine_sim)
-                # n_in = ns[i_in]
-                v_in = vs[fs[i_in]]
-                p0 = self.closest_point(v_ref[0], v_in)
-                p_ref = self.closest_point(p0, v_ref)
-                p_in = self.closest_point(p_ref, v_in)
-                # p_ref = self.closest_point(p_in, v_ref)
-                # d2 = jnp.dot(p_ref-p_in, n_ref)
-                # l2 = jnp.linalg.norm(p_ref-p_in)
-                
-                length = n_overlap.min()
-                mtv = n_ref * length
-                # print(mtv, length)
-                # print((p_ref-p_in), d2)
-                # breakpoint()
-                return jnp.stack((jnp.array([True,True,False]), mtv, n_ref, p_ref, p_in))
-
-'''

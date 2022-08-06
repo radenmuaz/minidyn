@@ -87,6 +87,7 @@ class PygfxSimulator:
         print()
         for i, qd in enumerate(self.qd): print(f'qd{i}: ', qd)
         print()
+        return
         for i, F_c in enumerate(aux[0]): print(f'F_c{i}: ', F_c)
         print()
         print('collisions:',aux[1][1])

@@ -6,7 +6,6 @@ from minidyn.dyn.body import Body, Inertia
 import networkx
 from typing import *
 
-from jax import vmap, tree_multimap,lax
 
 def vec_with1(v):
     return jnp.array([*v, 1]).reshape(4,1)
@@ -85,7 +84,7 @@ def quat2mat(quat, eps=1e-9):
     # return  get_mat(w, x, y, z, Nq)
     
 def quat_inv(quat):
-    return cat((quat[0],quat[1:]*-1)) / (quat.T@quat)
+    return cat((quat[0:1],quat[1:]*-1)) / (quat.T@quat)
 
 def q2tf(q: jnp.array):
     R = quat2mat(quat_norm(q[:4]))
