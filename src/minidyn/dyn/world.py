@@ -2,8 +2,9 @@ import jax
 from jax import numpy as jnp, random
 from jax.numpy import concatenate as cat
 
-import minidyn as mdn
-from minidyn.dyn.body import Body, Inertia
+from minidyn.dyn.body import Body, Inertia, Shape
+from minidyn.dyn.contacts import RigidContact
+from minidyn.dyn.collisions import separating_axis
 import minidyn.dyn.functions as F
 
 from typing import *
@@ -28,33 +29,18 @@ class World:
     '''
     Bodies connected with joints
     '''
-    def __init__(self, root=Body(), joints=[],
-                     bodies=[], shapes=[],gravity=jnp.array((0, 0, 9.81)),
+    def __init__(self, joints=[], contacts=[],
+                     bodies=[],gravity=jnp.array((0, 0, 9.81)),
                     init_qs=[], init_qds=[],
-                    body_pairs_idxs=[], shape_pairs_idxs=[], 
-                    body_pairs_mat_idxs=[], shape_pairs_mat_idxs=[],
-                    body_pairs=[], shape_pairs=[],
-                    body_pairs_mat=[], shape_pairs_mat=[],
-                    static_flags=[]
+                    static_flags=[],
                     ):
-        self.root = root
         self.joints = joints
+        self.contacts = contacts
         self.bodies = bodies
-        self.shapes = shapes
         self.gravity = gravity
         self.init_qs = init_qs
         self.init_qds = init_qds
     
-        self.body_pairs = body_pairs
-        self.shape_pairs = shape_pairs
-        self.body_pairs_mat = body_pairs_mat # body pairs tiled to match shapes len
-        self.shape_pairs_mat = shape_pairs_mat # body pairs tiled to match shapes len
-
-        self.body_pairs_idxs = body_pairs_idxs
-        self.shape_pairs_idxs = shape_pairs_idxs
-        self.body_pairs_mat_idxs = body_pairs_mat_idxs 
-        self.shape_pairs_mat_idxs = shape_pairs_mat_idxs 
-
         self.static_flags = static_flags
         
 
@@ -63,68 +49,52 @@ class World:
         body = Body()
         mass = 0
         moment = jnp.eye(3) * mass
-        body.inertia = mdn.dyn.body.Inertia(mass=mass,moment=moment)
-        # shape = trimesh.creation.box((100., 100, .1))
+        body.inertia = Inertia(mass=mass,moment=moment)
         shape = trimesh.creation.box((w, w, h))
-        # body.add_shape(mdn.col.Shape.from_trimesh(shape))
-        body.shapes = [mdn.dyn.body.Shape.from_trimesh(shape)]
+        body.shapes = [Shape.from_trimesh(shape)]
         body.shapes[0].Kp = Kp
         if q is None:
             q = jnp.array([1., 0.0 , 0, 0., 0, 0. , -h/2])
         self.add_body(body, static=True, q=q)
         return body, body.inertia, shape
-        # self.add_body(body, static=True,q=jnp.array([0.999, 0 , 0.04, 0., 0, 0. , -h/2]))
 
-    def add_body(self, body, q=None, qd=None, static=False):
+    def add_body(self, body, q=None, qd=None, static=False, contact=True):
         q = q if q is not None else jnp.zeros(7).at[0].set(1)
-        # qd = qd if qd is not None else jnp.zeros(7).at[0].set(1e-18)
         qd = qd if qd is not None else jnp.zeros(7).at[0].set(1e-9)
-        self.init_qs += [q]
-        # self.init_qs += [jnp.zeros(7).at[0].set(1).at[6].set(10)]
-        self.init_qds += [qd]
-        # self.init_qds += [jnp.zeros(7).at[0].set(1e-9).at[1].set(1)]
-        # self.graph.add_node(body)
-        def rl(x): return range(len(x))
-        N = len(self.bodies)
-        for i, b in enumerate(self.bodies):
-            self.body_pairs_idxs += [[N, i]]
-            self.shape_pairs_idxs += [[[j, k] for j in rl(body.shapes) for k in rl(b.shapes)]]
-            self.body_pairs_mat_idxs += [[N, i]*(len(b.shapes)*len(body.shapes))]
-            self.shape_pairs_mat_idxs += [[j, k] for j in rl(body.shapes) for k in rl(b.shapes)]
-            self.body_pairs += [[body, self.bodies[i]]]
-            self.shape_pairs += [[[j, k] for j in body.shapes for k in b.shapes]]
-            self.body_pairs_mat += [[body, self.bodies[i]]*(len(b.shapes)*len(body.shapes))]
-            self.shape_pairs_mat += [[j, k] for j in body.shapes for k in b.shapes]
-
         self.bodies += [body,]
+        if contact:
+            for other_body in self.bodies:
+                if other_body is body:
+                    continue
+                for other_shape in other_body.shapes:
+                    for shape in body.shapes:
+                        contact = RigidContact()
+                        contact.connect(self, body, other_body, shape, other_shape)
+                        self.add_contact(contact)
+
+        self.init_qs += [q]
+        self.init_qds += [qd]
         self.static_flags += [static]
-        
         
     
     def add_joint(self, joint):
         self.joints += [joint,]
+    
+    def add_contact(self, contact):
+        self.contacts += [contact,]
     
     def get_init_state(self):
         return jnp.vstack(self.init_qs), jnp.vstack(self.init_qds)
     
     def tree_flatten(self):
         children = (
-                    self.root,
                     self.joints,
+                    self.contacts,
                     self.bodies,
-                    self.shapes,
                     self.gravity,
                     self.init_qs,
                     self.init_qds,
-                    self.body_pairs_idxs,
-                    self.shape_pairs_idxs,
-                    self.body_pairs_mat_idxs,
-                    self.shape_pairs_mat_idxs,
-                    self.body_pairs,
-                    self.shape_pairs,
-                    self.body_pairs_mat,
-                    self.shape_pairs_mat,
-                    self.static_flags
+                    self.static_flags,
                     )
         aux_data = None
         return (children, aux_data)

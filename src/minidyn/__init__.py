@@ -1,2 +1,2 @@
-# from minidyn import dyn
+# import dyn
 # from minidyn import sim

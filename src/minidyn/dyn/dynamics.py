@@ -14,23 +14,17 @@ from minidyn.dyn import functions as F
 
 @register_pytree_node_class
 class LagrangianDynamics(object):
-    def __init__(self, dt=1/30.):
+    def __init__(self, dt=1/30., a=0):
         super().__init__()
         self.integrator = integrators.euler
         self.dt = dt
-        self.collision_solver = collisions.SeparatingAxis()
-        self.contact_solver = contacts.CompliantContacts()
+        self.a = a
+        # self.contact_solver = contacts.CompliantContacts()
     
-    def __call__(self, world: world.World, q, qd, u):
-        qdd, aux = self.solve(world, q, qd, u)
-        q_new, qd_new = self.integrator(q, qd, qdd, self.dt)
-        # def norm_quat_part(q): 
-        #     return q.at[:4].set(F.quat_norm(q[:4]))
-        # q_new = jax.vmap(norm_quat_part)(q_new)
-        return q_new, qd_new, aux
-
     @partial(jax.jit, static_argnums=(0,))
-    def solve(self, world, q, qd, u):
+    def __call__(self, world: world.World, q, qd, u):
+        
+
         def get_energies(q, qd, u, world):
             tfs = jax.vmap(F.q2tf)(q)
             Is_local = tree_map( lambda *values: 
@@ -40,7 +34,8 @@ class LagrangianDynamics(object):
             vs = jax.vmap(F.qqd2v)(q, qd)
             Ts = jax.vmap(F.kinetic_energy)(Is, vs)
             g = world.gravity.reshape(1,3)
-            static = jnp.array(world.static_flags).tile((3,1)).T
+            # static = jnp.array(world.static_flags).tile((3,1)).T
+            static = jnp.tile(jnp.array(world.static_flags), (3,1)).T
             gs = jnp.tile(g.reshape(1,3), len(tfs)).reshape(len(tfs), 3)
             gs = jnp.where(static == True, 0, gs)
             Vs = jax.vmap(F.potential_energy)(Is, tfs, gs)
@@ -66,67 +61,70 @@ class LagrangianDynamics(object):
         # C = jax.jacfwd(jax.grad(L, 1, True), 0)(q, qd, u, world)[0]
         # C = C.reshape(N, N)
         # C = jnp.where(jnp.isnan(C),0,C)
-        # breakpoint()
-
-        Fs = []
-        for joint in world.joints:
-            Jdo, Jo, Cdo, Co = joint(q, qd)
-            J = Jo.reshape(Jo.shape[0],N)
-            Jd = Jdo.reshape(Jdo.shape[0],N)
-            C = Co[::,jnp.newaxis]
-            Cd = Cdo[::,jnp.newaxis]
-            # J = J.reshape(N, J.shape[0]).T
-
-
+        def get_F_given_J_C(J, Jd, C):
+            J = J.reshape(J.shape[0],N)
+            Jd = Jd.reshape(Jd.shape[0],N)
+            C = C[::,jnp.newaxis]
             K = J @ Minv @ J.T
             Kinv = jnp.linalg.pinv(K)
-            # Kinv = jnp.linalg.inv(K+jnp.eye(7,7)*1e-9)
-            a = 1
-            Lmult = Kinv @ (J@Minv@(u_vec-g) + (Jd@qd_vec))
-            # breakpoint()
-            # Lmult = Kinv @ (J@Minv@(u_vec-g) + (Jd+2*a*J)@qd_vec + (a^2)*C)
-            jax.debug.print('J {x}',x=Jo)
-            jax.debug.print('Jd {x}',x=Jdo)
-            jax.debug.print('Cd {x}',x=Cdo)
-            # if (Jd@qd_vec).sum()>0:breakpoint()
-            # def true(x): jax.debug.breakpoint()
-            # def false(x): pass
-            # jax.lax.cond((Jd@qd_vec).sum()>0, true, false, None)
+            T1 = J@Minv@(u_vec-g)
+            T2 = (Jd + 2*self.a*J)@qd_vec
+            T3 = (self.a**2)*C
+            Lmult = Kinv @ (T1 + T2 + T3)
             F_c = J.T @ -Lmult
-            Fs += [F_c]
-            # F_c = jnp.where(jnp.isnan(F_c), 0, F_c)
+            return F_c, Lmult
 
-        
-        F_c, colaux = self.contact_solver(world, self.collision_solver, q, qd)
-        F_c_vec = F_c.reshape(N, 1)
-        # F_c_vec = jnp.zeros((N, 1))
-        Fs += [F_c_vec]
+        Fs = []
+        Lmults = []
+        for joint in world.joints:
+            Jd, J, Cd, C = joint(q, qd)
+            F_j, Lmult_j = get_F_given_J_C(J, Jd, C)
+            Fs += [F_j]
+            Lmults += [Lmult_j]
+            jax.debug.print('joint {x}',x=joint)
+            jax.debug.print('J {x}',x=J)
+            jax.debug.print('Jd {x}',x=Jd)
+            jax.debug.print('C {x}',x=C)
+            jax.debug.print('Cd {x}',x=Cd)
+
+        col_dicts = []
+        J_c= []
+        for contact in world.contacts:
+            Jd, J, Cd, C, col_dict = contact(q, qd, collisions.separating_axis)
+            F_j, Lmult_j = get_F_given_J_C(J, Jd, C)
+            Fs += [F_j]
+            J_c += [J]
+            Lmults += [Lmult_j]
+            col_dicts += [col_dict]
+            jax.debug.print('contact {x}',x=contact)
+            jax.debug.print('J {x}',x=J)
+            jax.debug.print('Jd {x}',x=Jd)
+            jax.debug.print('C {x}',x=C)
+            jax.debug.print('Cd {x}',x=Cd)
 
         qdd_vec = Minv @ (g - sum(Fs))
-        jax.debug.print('qdd {x}',x=qdd_vec)
-        jax.debug.print('Minv {x}',x=Minv)
-        jax.debug.print('g {x}',x=g)
-        jax.debug.print('Fs {x}',x=Fs)
-        # qdd_vec = Minv @ ( g - C @ qd_vec - F_c_vec)
-        # qdd_vec = Minv @ ( g - C @ qd_vec + F_c_vec)
         qdd = qdd_vec.reshape(qd.shape)
         static= jnp.array(world.static_flags)[:, jnp.newaxis]
         qdd = jnp.where(static == True, 0, qdd)
 
+        # jax.debug.print('qdd {x}',x=qdd_vec)
+        # jax.debug.print('Minv {x}',x=Minv)
+        # jax.debug.print('g {x}',x=g)
+        # jax.debug.print('Fs {x}',x=Fs)
 
+        aux = (col_dicts, Fs, Lmults, g, T, V)#M, K, Lmult, J, Jd, JL)
 
-        # jnp.set_printoptions(precision=4)
-        # print(world.body_pairs_idxs)
-        # col = self.collision_solver(world, q);print(col[0]); 
-        # if col[0].any():import pdb;pdb.set_trace()
+        jax.debug.print('colinfo {x}',x=col_dicts)
 
-        aux = (F_c, colaux, g, T, V)#M, K, Lmult, J, Jd, JL)
-        # import pdb;pdb.set_trace()
-        return qdd, aux
+        q_new, qd_new = self.integrator(q, qd, qdd, self.dt)
+        
+        return q_new, qd_new, aux
+        # return qdd, aux
     
     def tree_flatten(self):
         children = (
-                    self.dt
+                    self.dt,
+                    self.a
                     )
         aux_data = None
         return (children, aux_data)

@@ -56,8 +56,12 @@ class FixedJoint:
         # J_trans, C_trans = jax.jacfwd(get_trans, 0, True)(q)
         Jd_rot, (J_rot, Cd_rot, C_rot) = jax.jacfwd(partial(get_J_Jd, get_rot), 0, True)(q, qd)
         Jd_trans, (J_trans, Cd_trans, C_trans) = jax.jacfwd(partial(get_J_Jd, get_trans), 0, True)(q, qd)
-        return Jd_trans, J_trans, Cd_trans, C_trans
-        return jnp.concatenate([J_rot, J_trans]), jnp.concatenate([C_rot, C_trans])
+        # return Jd_trans, J_trans, Cd_trans, C_trans
+        Jd = jnp.concatenate([Jd_rot, Jd_trans])
+        J = jnp.concatenate([J_rot, J_trans])
+        Cd = jnp.concatenate([Cd_rot, Cd_trans])
+        C = jnp.concatenate([C_rot, C_trans])
+        return Jd, J, Cd, C 
     
     def tree_flatten(self):
         children = (

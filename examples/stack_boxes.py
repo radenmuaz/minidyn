@@ -14,7 +14,7 @@ if __name__ == "__main__":
     world.add_ground()
     # world = dyn.World(gravity=jnp.array((0, 0, 0)))
 
-    N = 3
+    N = 1
     for i in range(N):
         box_body = mdn.dyn.body.Body()
         box_mass = 0.3
@@ -24,11 +24,9 @@ if __name__ == "__main__":
                             com=jnp.array((0, 0, 0)),
                                             )
         box_shape = trimesh.creation.box((1., 1., 1.))
-        # box_shape = trimesh.creation.capsule(height=1.0, radius=0.5, count=[8,8])
-        # breakpoint()
         box_body.shapes = [mdn.dyn.body.Shape.from_trimesh(box_shape)]
-        box_body.shapes[0].Kp = 5
-        world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , i+1+0.2]))
+        # box_body.shapes[0].Kp = 5
+        world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 1+i*.2]))
     dt=1/20
     dynamics = mdn.dyn.dynamics.LagrangianDynamics(dt=dt)
     
