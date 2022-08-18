@@ -87,11 +87,11 @@ class PygfxSimulator:
         print()
         for i, qd in enumerate(self.qd): print(f'qd{i}: ', qd)
         print()
-        return
-        for i, F_c in enumerate(aux[0]): print(f'F_c{i}: ', F_c)
-        print()
-        print('collisions:',aux[1][1])
-        if aux[1][1].any(): print(aux[1][5:])
+        # return
+        # for i, F_c in enumerate(aux[0]): print(f'F_c{i}: ', F_c)
+        # print()
+        # print('collisions:',aux[1][1])
+        # if aux[1][1].any(): print(aux[1][5:])
         # if aux[1][1].any(): print(aux[1][5:]);breakpoint()
         # if aux[1][2].any(): breakpoint()
         # if aux[1][3].any(): breakpoint()

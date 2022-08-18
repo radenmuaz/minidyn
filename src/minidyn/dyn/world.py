@@ -29,13 +29,13 @@ class World:
     '''
     Bodies connected with joints
     '''
-    def __init__(self, joints=[], contacts=[],
+    def __init__(self, joints=[], rigid_contacts=[],
                      bodies=[],gravity=jnp.array((0, 0, 9.81)),
                     init_qs=[], init_qds=[],
                     static_flags=[],
                     ):
         self.joints = joints
-        self.contacts = contacts
+        self.rigid_contacts = rigid_contacts
         self.bodies = bodies
         self.gravity = gravity
         self.init_qs = init_qs
@@ -58,19 +58,19 @@ class World:
         self.add_body(body, static=True, q=q)
         return body, body.inertia, shape
 
-    def add_body(self, body, q=None, qd=None, static=False, contact=True):
+    def add_body(self, body, q=None, qd=None, static=False, rigid_contact=True):
         q = q if q is not None else jnp.zeros(7).at[0].set(1)
         qd = qd if qd is not None else jnp.zeros(7).at[0].set(1e-9)
         self.bodies += [body,]
-        if contact:
+        if rigid_contact:
             for other_body in self.bodies:
                 if other_body is body:
                     continue
                 for other_shape in other_body.shapes:
                     for shape in body.shapes:
-                        contact = RigidContact()
-                        contact.connect(self, body, other_body, shape, other_shape)
-                        self.add_contact(contact)
+                        rigid_contact = RigidContact()
+                        rigid_contact.connect(self, body, other_body, shape, other_shape)
+                        self.add_rigid_contact(rigid_contact)
 
         self.init_qs += [q]
         self.init_qds += [qd]
@@ -80,8 +80,8 @@ class World:
     def add_joint(self, joint):
         self.joints += [joint,]
     
-    def add_contact(self, contact):
-        self.contacts += [contact,]
+    def add_rigid_contact(self, rigid_contact):
+        self.rigid_contacts += [rigid_contact,]
     
     def get_init_state(self):
         return jnp.vstack(self.init_qs), jnp.vstack(self.init_qds)
@@ -89,7 +89,7 @@ class World:
     def tree_flatten(self):
         children = (
                     self.joints,
-                    self.contacts,
+                    self.rigid_contacts,
                     self.bodies,
                     self.gravity,
                     self.init_qs,

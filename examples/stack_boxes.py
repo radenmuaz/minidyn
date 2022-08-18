@@ -14,7 +14,7 @@ if __name__ == "__main__":
     world.add_ground()
     # world = dyn.World(gravity=jnp.array((0, 0, 0)))
 
-    N = 1
+    N = 2
     for i in range(N):
         box_body = mdn.dyn.body.Body()
         box_mass = 0.3

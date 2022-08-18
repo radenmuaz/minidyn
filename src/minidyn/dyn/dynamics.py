@@ -9,6 +9,7 @@ from zmq import has
 from minidyn.dyn import integrators
 from minidyn.dyn import collisions
 from minidyn.dyn import contacts
+from minidyn.dyn.contacts import RigidContact
 from minidyn.dyn import world
 from minidyn.dyn import functions as F
 
@@ -19,7 +20,6 @@ class LagrangianDynamics(object):
         self.integrator = integrators.euler
         self.dt = dt
         self.a = a
-        # self.contact_solver = contacts.CompliantContacts()
     
     @partial(jax.jit, static_argnums=(0,))
     def __call__(self, world: world.World, q, qd, u):
@@ -61,7 +61,7 @@ class LagrangianDynamics(object):
         # C = jax.jacfwd(jax.grad(L, 1, True), 0)(q, qd, u, world)[0]
         # C = C.reshape(N, N)
         # C = jnp.where(jnp.isnan(C),0,C)
-        def get_F_given_J_C(J, Jd, C):
+        def get_forces(J, Jd, C):
             J = J.reshape(J.shape[0],N)
             Jd = Jd.reshape(Jd.shape[0],N)
             C = C[::,jnp.newaxis]
@@ -72,37 +72,36 @@ class LagrangianDynamics(object):
             T3 = (self.a**2)*C
             Lmult = Kinv @ (T1 + T2 + T3)
             F_c = J.T @ -Lmult
-            return F_c, Lmult
+            return dict(F_c=F_c, Lmult=Lmult)
+            # return F_c, Lmult
 
-        Fs = []
-        Lmults = []
-        for joint in world.joints:
-            Jd, J, Cd, C = joint(q, qd)
-            F_j, Lmult_j = get_F_given_J_C(J, Jd, C)
-            Fs += [F_j]
-            Lmults += [Lmult_j]
-            jax.debug.print('joint {x}',x=joint)
-            jax.debug.print('J {x}',x=J)
-            jax.debug.print('Jd {x}',x=Jd)
-            jax.debug.print('C {x}',x=C)
-            jax.debug.print('Cd {x}',x=Cd)
+        # Fs = []
+        # Lmults = []
+        # for joint in world.joints:
+        #     Jd, J, Cd, C = joint(q, qd)
+        #     F_j, Lmult_j = get_F_given_J_C(J, Jd, C)
+        #     Fs += [F_j]
+        #     Lmults += [Lmult_j]
+        #     jax.debug.print('joint {x}',x=joint)
+        #     jax.debug.print('J {x}',x=J)
+        #     jax.debug.print('Jd {x}',x=Jd)
+        #     jax.debug.print('C {x}',x=C)
+        #     jax.debug.print('Cd {x}',x=Cd)
 
-        col_dicts = []
-        J_c= []
-        for contact in world.contacts:
-            Jd, J, Cd, C, col_dict = contact(q, qd, collisions.separating_axis)
-            F_j, Lmult_j = get_F_given_J_C(J, Jd, C)
-            Fs += [F_j]
-            J_c += [J]
-            Lmults += [Lmult_j]
-            col_dicts += [col_dict]
-            jax.debug.print('contact {x}',x=contact)
-            jax.debug.print('J {x}',x=J)
-            jax.debug.print('Jd {x}',x=Jd)
-            jax.debug.print('C {x}',x=C)
-            jax.debug.print('Cd {x}',x=Cd)
+        rigid_contacts_result = RigidContact.vmap_solve(world.rigid_contacts, q, qd)
+        # breakpoint()
+        (C_fric, C_pen, Cd_fric, Cd_pen, 
+        J_fric, J_pen, Jd_fric, Jd_pen,
+            col_info) = (v for (k, v) in rigid_contacts_result.items())
 
-        qdd_vec = Minv @ (g - sum(Fs))
+        pen_forces = jax.vmap(get_forces)(J_pen, Jd_pen, C_pen)
+        F_c_pen, Lmult_pen = (v for (k,v) in pen_forces.items())
+
+        fric_forces = jax.vmap(get_forces)(J_fric, Jd_fric, C_fric)
+        F_c_fric, Lmult_fric = (v for (k,v) in fric_forces.items())
+
+        F_constr = jnp.sum(F_c_pen, 0) + jnp.sum(F_c_fric, 0) 
+        qdd_vec = Minv @ (g - F_constr)
         qdd = qdd_vec.reshape(qd.shape)
         static= jnp.array(world.static_flags)[:, jnp.newaxis]
         qdd = jnp.where(static == True, 0, qdd)
@@ -112,11 +111,26 @@ class LagrangianDynamics(object):
         # jax.debug.print('g {x}',x=g)
         # jax.debug.print('Fs {x}',x=Fs)
 
-        aux = (col_dicts, Fs, Lmults, g, T, V)#M, K, Lmult, J, Jd, JL)
+        aux = dict(rigid_contacts_result, 
+                    pen_forces=pen_forces, 
+                    fric_forces=fric_forces,
+                         T=T, V=V)
 
-        jax.debug.print('colinfo {x}',x=col_dicts)
+        jax.debug.print('colinfo {x}',x=col_info)
 
         q_new, qd_new = self.integrator(q, qd, qdd, self.dt)
+
+        alpha = jnp.zeros(N)
+        alpha_pairs = tree_map( lambda *values: 
+                jnp.stack(values, axis=0), 
+                *[[t.shape_pair[0].alpha, t.shape_pair[1].alpha] 
+                    for t in world.rigid_contacts])
+        ib_pairs = tree_map( lambda *values: 
+                jnp.stack(values, axis=0), *[t.ib_pair for t in world.rigid_contacts])
+        breakpoint()
+
+        dqd = (1+alpha)
+
         
         return q_new, qd_new, aux
         # return qdd, aux
