@@ -5,7 +5,7 @@ from jax.numpy import concatenate as cat
 from minidyn.dyn.body import Body, Inertia, Shape
 from minidyn.dyn.contacts import RigidContact
 from minidyn.dyn.collisions import separating_axis
-import minidyn.dyn.functions as F
+import minidyn.dyn.functions as Fn
 
 from typing import *
 from functools import partial

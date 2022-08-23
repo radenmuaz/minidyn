@@ -3,7 +3,7 @@ from jax import numpy as jnp, random
 from jax.numpy import concatenate as cat
 # import numpy as jnp
 import minidyn as mdn
-import minidyn.dyn.functions as F
+import minidyn.dyn.functions as Fn
 
 from typing import *
 from functools import partial
@@ -71,7 +71,7 @@ class PygfxSimulator:
             q = self.q[i]
             shapes = self.viz_data['body2shapes'][i]
             quat = q[:4]
-            quat = F.quat_norm(quat)
+            quat = Fn.quat_norm(quat)
             quat = Quaternion(quat[1], quat[2], quat[3], quat[0])
             # quat = Quaternion(q[1], q[2], q[3],q[0])
             vec3 = Vector3(q[4], q[5], q[6])

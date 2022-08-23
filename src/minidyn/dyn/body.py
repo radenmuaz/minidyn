@@ -40,7 +40,7 @@ class Inertia:
     def tree_unflatten(cls, aux_data, children):
         return cls(*children)    
 
-import minidyn.dyn.functions as F
+import minidyn.dyn.functions as Fn
 
 from jax.tree_util import register_pytree_node_class
 

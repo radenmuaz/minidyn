@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import jax
 from jax import numpy as jnp, random
-import minidyn.dyn.functions as F
+import minidyn.dyn.functions as Fn
 from jax.tree_util import register_pytree_node_class
 from functools import partial
 import trimesh
@@ -51,16 +51,16 @@ class SeparatingAxis:
         # import pdb;pdb.set_trace()
         q1 = jnp.stack(q1)
         q2 = jnp.stack(q2)
-        def stack_attr(pytrees, attr):
+        def Fn.stack_attr(pytrees, attr):
             return  tree_map( lambda *values: 
                 jnp.stack(values, axis=0), *[getattr(t, attr) for t in pytrees])
 
-        v1 = stack_attr(s1, 'vertices')
-        v2 = stack_attr(s2, 'vertices')
-        n1 = stack_attr(s1, 'face_normals')
-        n2 = stack_attr(s2, 'face_normals')
-        f1 = stack_attr(s1, 'faces')
-        f2 = stack_attr(s2, 'faces')
+        v1 = Fn.stack_attr(s1, 'vertices')
+        v2 = Fn.stack_attr(s2, 'vertices')
+        n1 = Fn.stack_attr(s1, 'face_normals')
+        n2 = Fn.stack_attr(s2, 'face_normals')
+        f1 = Fn.stack_attr(s1, 'faces')
+        f2 = Fn.stack_attr(s2, 'faces')
         # import pdb; pdb.set_trace()
 
         # with jax.disable_jit():
@@ -76,16 +76,16 @@ class SeparatingAxis:
     
     def solve(self, q1, q2, v1, v2, n1, n2, f1, f2):
         
-        v1 = F.vec2world(v1, F.q2tf(q1)) 
-        v2 = F.vec2world(v2, F.q2tf(q2)) 
+        v1 = Fn.vec2world(v1, Fn.q2tf(q1)) 
+        v2 = Fn.vec2world(v2, Fn.q2tf(q2)) 
         
         # for normals, zero translate
-        n1 = F.vec2world(n1, F.q2tf(jnp.array([*q1[:4], 0, 0, 0])))
-        n2 = F.vec2world(n2, F.q2tf(jnp.array([*q2[:4], 0, 0, 0])))
+        n1 = Fn.vec2world(n1, Fn.q2tf(jnp.array([*q1[:4], 0, 0, 0])))
+        n2 = Fn.vec2world(n2, Fn.q2tf(jnp.array([*q2[:4], 0, 0, 0])))
 
         naxes = jnp.concatenate([n1, n2], axis=0)
         def build_edge_vec(v):
-            return F.vec_normalize(v - jnp.roll(v,-1,0))
+            return Fn.vec_normalize(v - jnp.roll(v,-1,0))
             # return v - jnp.roll(v,-1,0)
         e1 = build_edge_vec(v1)
         e2 = build_edge_vec(v2)
@@ -100,7 +100,7 @@ class SeparatingAxis:
 
         # xaxes[idxzeros,:] = jnp.array([1.,0,0])
         # xaxes = xaxes[~jnp.all(xaxes== 0, axis=1)] # prune zero vectors
-        xaxes = F.vec_normalize(xaxes)
+        xaxes = Fn.vec_normalize(xaxes)
         # axes = jnp.concatenate([naxes, xaxes], axis=0)
 
 
@@ -126,11 +126,11 @@ class SeparatingAxis:
                         xaxes, xp1_mins, xp1_maxs, xp2_mins, xp2_maxs):
             n1_diff = np1_maxs - np2_mins
             n2_diff = np2_maxs - np1_mins
-            n1_overlap = n1_diff.min()
-            n2_overlap = n2_diff.min()
-            i1 = n1_diff.argmin()
+            n1_overlap = n1_difFn.min()
+            n2_overlap = n2_difFn.min()
+            i1 = n1_difFn.argmin()
             i1 = jnp.where(i1>len(n1),i1-len(n2),i1)
-            i2 = n2_diff.argmin()
+            i2 = n2_difFn.argmin()
             i2 = jnp.where(i2>len(n2),i2-len(n1),i2)
 
             x1_diff = xp1_maxs - xp2_mins
@@ -164,10 +164,10 @@ class SeparatingAxis:
                 
                 e1s, e1e = v1[i_ref], v1[i_ref-1]
                 e2s, e2e = v2[i_ref], v2[i_ref-1]
-                d1 = F.vec_normalize((e1e - e1s)[jnp.newaxis,:]).squeeze()
-                d2 = F.vec_normalize((e2e - e2s)[jnp.newaxis,:]).squeeze()
+                d1 = Fn.vec_normalize((e1e - e1s)[jnp.newaxis,:]).squeeze()
+                d2 = Fn.vec_normalize((e2e - e2s)[jnp.newaxis,:]).squeeze()
                 d2_perp = jnp.cross(d2, n_ref)
-                d2_perp = F.vec_normalize((d2_perp)[jnp.newaxis,:]).squeeze()
+                d2_perp = Fn.vec_normalize((d2_perp)[jnp.newaxis,:]).squeeze()
 
                 m = (jnp.dot(-d2_perp, (e1s-e2s)) / jnp.dot(d2_perp, d1))
                 p_ref = e1s + m * d1

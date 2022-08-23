@@ -47,15 +47,12 @@ class CompliantContacts:
             s1 += [bs1]
             s2 += [bs2]
 
-        def stack_attr(pytrees, attr):
-            return  tree_map( lambda *values: 
-                jnp.stack(values, axis=0), *[getattr(t, attr) for t in pytrees])
-        # breakpoint()
+   
 
-        Kp1 = stack_attr(s1, 'Kp')
-        Kp2 = stack_attr(s2, 'Kp')
-        mu1 = stack_attr(s1, 'mu')
-        mu2 = stack_attr(s2, 'mu')
+        Kp1 = Fn.stack_attr(s1, 'Kp')
+        Kp2 = Fn.stack_attr(s2, 'Kp')
+        mu1 = Fn.stack_attr(s1, 'mu')
+        mu2 = Fn.stack_attr(s2, 'mu')
         ib1 = jnp.array(ib1)
         ib2 = jnp.array(ib2)
 
@@ -81,9 +78,9 @@ class CompliantContacts:
             return jnp.where(collide_flag, F, 0)
         def arrange_F(carry_F, tup):
             F, ib1, ib2 = tup
-            F = F.squeeze(0)
+            F = Fn.squeeze(0)
             F1, F2 = F[0,:], F[1,:]
-            return carry_F.at[ib1].add(F1).at[ib2].add(F2), None
+            return carry_Fn.at[ib1].add(F1).at[ib2].add(F2), None
         Fs = jax.vmap(get_F)(did_collide, J, C, ib1, ib2, Kp1, Kp2, mu1, mu2)
         F, _ = jax.lax.scan(arrange_F, jnp.zeros(q.shape), (Fs, ib1, ib2))
         # import pdb;pdb.set_trace()
@@ -170,12 +167,8 @@ class CompliantContacts:
         for (ib1, ib2), (bs1, bs2) in zip(world.body_pairs_mat_idxs, world.shape_pairs_mat):
             ib += [ib1, ib2]
             s += [bs1, bs2]
-        
-        def stack_attr(pytrees, attr):
-            return  tree_map( lambda *values: 
-                jnp.stack(values, axis=0), *[getattr(t, attr) for t in pytrees])
 
-        Kp = stack_attr(s, 'Kp')
+        Kp = Fn.stack_attr(s, 'Kp')
         ib = jnp.array(ib)
 
         def get_F(collide_flag, p_ref, p_in, dir, Kp):
@@ -186,7 +179,7 @@ class CompliantContacts:
         def arrange_F(carry_F, F_and_ib):
             F, ib = F_and_ib
             Fe = jnp.array([0, 0, 0 ,0, *F])
-            return carry_F.at[ib].add(Fe), Fe
+            return carry_Fn.at[ib].add(Fe), Fe
         F = jax.vmap(get_F)(did_collide, p_refs, p_ins, n_refs, Kp)
         F, _ = jax.lax.scan(arrange_F, jnp.zeros(q.shape), (F, ib))
 

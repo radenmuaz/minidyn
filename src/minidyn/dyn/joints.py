@@ -12,7 +12,7 @@ from minidyn.dyn import integrators
 from minidyn.dyn import collisions
 from minidyn.dyn import contacts
 from minidyn.dyn import World
-import minidyn.dyn.functions as F
+import minidyn.dyn.functions as Fn
 
 @register_pytree_node_class
 class FixedJoint:
@@ -40,7 +40,7 @@ class FixedJoint:
             (q1, q2) = collate(q)
             quat1, quat2 = q1[:4], q2[:4]
 
-            ret = (quat1 * F.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
+            ret = (quat1 * Fn.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
             return ret, ret
         
         def get_J_Jd(f, q, qd):
@@ -99,7 +99,7 @@ class FixedJoint:
             trans = (x1 + a1) - (x2 + a2)
         
             quat1, quat2 = q1[:4], q2[:4]
-            rot = (quat1 * F.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
+            rot = (quat1 * Fn.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
             ret = jnp.concatenate([trans, rot])
             return ret, ret
         
@@ -122,7 +122,7 @@ class FixedJoint:
             trans = (x1 + a1) - (x2 + a2)
         
             quat1, quat2 = q1[:4], q2[:4]
-            rot = (quat1 * F.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
+            rot = (quat1 * Fn.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
             ret = jnp.concatenate([trans, rot])
             return ret, ret
 
@@ -133,6 +133,6 @@ class FixedJoint:
         
         def C_rot(q1, q2):
             quat1, quat2 = q1[:4], q2[:4]
-            ret = (quat1 * F.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
+            ret = (quat1 * Fn.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
             return ret, ret
 '''

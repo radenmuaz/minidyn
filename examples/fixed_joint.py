@@ -1,4 +1,4 @@
-from minidyn.dyn import functions as F
+from minidyn.dyn import functions as Fn
 
 import minidyn as mdn
 from minidyn import dyn

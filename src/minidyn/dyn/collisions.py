@@ -1,35 +1,30 @@
 from dataclasses import dataclass
 import jax
 from jax import numpy as jnp, random
-import minidyn.dyn.functions as F
+import minidyn.dyn.functions as Fn
 from jax.tree_util import register_pytree_node_class
 from functools import partial
 import trimesh
 import minidyn as mdn
 from jax.tree_util import tree_map
 
-def separating_axis(q, ib_pair, shape_pair):
-    (ib1, ib2) = ib_pair
-    q1 = q[ib1]#[jnp.newaxis,:]
-    q2 = q[ib2]#[jnp.newaxis,:]
-    s1 = shape_pair[0]
-    s2 = shape_pair[1]
-    v1 = s1.vertices
-    v2 = s2.vertices
-    n1 = s1.face_normals
-    n2 = s2.face_normals
-    f1 = s1.faces
-    f2 = s2.faces
-    v1 = F.vec2world(v1, F.q2tf(q1)) 
-    v2 = F.vec2world(v2, F.q2tf(q2)) 
+def separating_axis(q1, q2, shape1 , shape2):
+    v1 = shape1.vertices
+    v2 = shape2.vertices
+    n1 = shape1.face_normals
+    n2 = shape2.face_normals
+    f1 = shape1.faces
+    f2 = shape2.faces
+    v1 = Fn.vec2world(v1, Fn.q2tf(q1)) 
+    v2 = Fn.vec2world(v2, Fn.q2tf(q2)) 
     
     # for normals, zero translate
-    n1 = F.vec2world(n1, F.q2tf(jnp.array([*q1[:4], 0, 0, 0])))
-    n2 = F.vec2world(n2, F.q2tf(jnp.array([*q2[:4], 0, 0, 0])))
+    n1 = Fn.vec2world(n1, Fn.q2tf(jnp.array([*q1[:4], 0, 0, 0])))
+    n2 = Fn.vec2world(n2, Fn.q2tf(jnp.array([*q2[:4], 0, 0, 0])))
 
     naxes = jnp.concatenate([n1, n2], axis=0)
     def build_edge_vec(v):
-        return F.vec_normalize(v - jnp.roll(v,-1,0))
+        return Fn.vec_normalize(v - jnp.roll(v,-1,0))
         # return v - jnp.roll(v,-1,0)
     e1 = build_edge_vec(v1)
     e2 = build_edge_vec(v2)
@@ -37,7 +32,7 @@ def separating_axis(q, ib_pair, shape_pair):
     idxzeros = jnp.all(xaxes== 0, axis=1).reshape(-1, 1)
     replace = jnp.tile(jnp.array([1,0,0]), (len(xaxes),1))
     xaxes = jnp.where(idxzeros, replace, xaxes)
-    xaxes = F.vec_normalize(xaxes)
+    xaxes = Fn.vec_normalize(xaxes)
 
     np1 = naxes @ v1.T
     np2 = naxes @ v2.T
@@ -162,10 +157,10 @@ def separating_axis(q, ib_pair, shape_pair):
             
             e1s, e1e = v1[i_ref], v1[i_ref-1]
             e2s, e2e = v2[i_ref], v2[i_ref-1]
-            d1 = F.vec_normalize((e1e - e1s)[jnp.newaxis,:]).squeeze()
-            d2 = F.vec_normalize((e2e - e2s)[jnp.newaxis,:]).squeeze()
+            d1 = Fn.vec_normalize((e1e - e1s)[jnp.newaxis,:]).squeeze()
+            d2 = Fn.vec_normalize((e2e - e2s)[jnp.newaxis,:]).squeeze()
             d2_perp = jnp.cross(d2, n_ref)
-            d2_perp = F.vec_normalize((d2_perp)[jnp.newaxis,:]).squeeze()
+            d2_perp = Fn.vec_normalize((d2_perp)[jnp.newaxis,:]).squeeze()
 
             m = (jnp.dot(-d2_perp, (e1s-e2s)) / jnp.dot(d2_perp, d1))
             p_ref = e1s + m * d1
