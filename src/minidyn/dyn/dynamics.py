@@ -22,7 +22,8 @@ class LagrangianDynamics(object):
         self.dt = dt
         self.a = a
     
-    @partial(jax.jit, static_argnums=(0,))
+    # @partial(jax.jit, static_argnums=(0,))
+    @jax.jit
     def __call__(self, world: world.World, qs, qds, us):            
         def get_L(q, qd, inertia, gravity):
             tf = Fn.q2tf(q)
@@ -68,28 +69,42 @@ class LagrangianDynamics(object):
         get_forces = partial(proto_get_forces, Minvs, us, gs, qds)
 
         F1_list, F2_list = [], []
-        
-        rigid_contacts_result = RigidContact.solve_world(world, qs, qds)
-        (C_frics, C_pens, _, _, 
-        J_frics, J_pens, Jd_frics, Jd_pens,
-        _, body1_ids, body2_ids) = (v for (k, v) in rigid_contacts_result.items())
+        body1_id_list, body2_id_list = [], []
+        constraints_results = dict()
+        forces = dict()
 
-        pen_forces = jax.vmap(get_forces)(J_pens, Jd_pens, C_pens, body1_ids, body2_ids)
-        F1_pens, F2_pens, _, _, body1_id_pens, body2_id_pens = (v for (k,v) in pen_forces.items())
+        if (len(world.rigid_contacts)>0):
+            rigid_contacts_result = RigidContact.solve_world(world, qs, qds)
+            (C_frics, C_pens, _, _, 
+            J_frics, J_pens, Jd_frics, Jd_pens,
+            _, body1_ids, body2_ids) = (v for (k, v) in rigid_contacts_result.items())
 
-        fric_forces = jax.vmap(get_forces)(J_frics, Jd_frics, C_frics, body1_ids, body2_ids)
-        F1_frics, F2_frics, _, _, body1_id_frics, body2_id_frics = (v for (k,v) in fric_forces.items())
+            pen_forces = jax.vmap(get_forces)(J_pens, Jd_pens, C_pens, body1_ids, body2_ids)
+            F1_pens, F2_pens, _, _, body1_id_pens, body2_id_pens = (v for (k,v) in pen_forces.items())
 
-        F1s = jnp.concatenate([F1_pens, F1_frics])
-        F2s = jnp.concatenate([F2_pens, F2_frics])
-        F1_body_ids = jnp.concatenate([body1_id_pens, body1_id_frics])
-        F2_body_ids = jnp.concatenate([body2_id_pens, body2_id_frics])
+            fric_forces = jax.vmap(get_forces)(J_frics, Jd_frics, C_frics, body1_ids, body2_ids)
+            F1_frics, F2_frics, _, _, body1_id_frics, body2_id_frics = (v for (k,v) in fric_forces.items())
+            F1_list += [F1_pens, F1_frics]
+            F2_list += [F2_pens, F2_frics]
+            body1_id_list += [body1_id_pens, body1_id_frics]
+            body2_id_list += [body2_id_pens, body2_id_frics]
+            constraints_results['rigid_contacts'] = rigid_contacts_result
+            forces['pen'] = pen_forces
+            forces['fric'] = fric_forces
+        else:
+            pass
 
-        def proto_map_F_to_qs_shape(qs_shape, F1, F2, F1_body_id, F2_body_id):
-            return jnp.zeros(qs_shape).at[F1_body_id].set(F1).at[F2_body_id].set(F2)
-        map_F_to_qs_shape = partial(proto_map_F_to_qs_shape, qs.shape)
-        F_mapped = jax.vmap(map_F_to_qs_shape)(F1s, F2s, F1_body_ids, F2_body_ids)
-        F_exts = jnp.sum(F_mapped, 0)
+        if (len(F1_list)>0):
+            F1s, F2s = jnp.concatenate(F1_list), jnp.concatenate(F2_list)
+            body1_ids, body2_ids = jnp.concatenate(body1_id_list), jnp.concatenate(body2_id_list)
+
+            def proto_map_F_to_qs_shape(qs_shape, F1, F2, body1_id, body2_id):
+                return jnp.zeros(qs_shape).at[body1_id].set(F1).at[body2_id].set(F2)
+            map_F_to_qs_shape = partial(proto_map_F_to_qs_shape, qs.shape)
+            F_mapped = jax.vmap(map_F_to_qs_shape)(F1s, F2s, body1_ids, body2_ids)
+            F_exts = jnp.sum(F_mapped, 0)
+        else:
+            F_exts = jnp.zeros_like(qs)
 
         def get_qdd(Minv, g, F_ext):
             return Minv @ (g - F_ext)
@@ -123,9 +138,8 @@ class LagrangianDynamics(object):
 
         # dqd = (1+alpha)
 
-        aux = dict(rigid_contacts_result, 
-                    pen_forces=pen_forces, 
-                    fric_forces=fric_forces,
+        aux = dict(constraints_results=constraints_results,
+                    forces=forces,
                          energies=energies)
         return qs_new, qds_new, aux
         # return qdd, aux

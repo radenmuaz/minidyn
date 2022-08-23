@@ -10,9 +10,9 @@ import trimesh
 if __name__ == "__main__":
     jnp.set_printoptions(precision=3)
 
-    # world = mdn.dyn.world.World(gravity=jnp.array((0, 0, 9.81)))
-    world = mdn.dyn.world.World(gravity=jnp.array((0, 0, 0)))
-    # world.add_ground()
+    world = mdn.dyn.world.World(gravity=jnp.array((0, 0, 9.81)))
+    # world = mdn.dyn.world.World(gravity=jnp.array((0, 0, 0)))
+    world.add_ground()
     # world = dyn.World(gravity=jnp.array((0, 0, 0)))
 
     N = 2
@@ -27,8 +27,8 @@ if __name__ == "__main__":
         box_shape = trimesh.creation.box((1., 1., 1.))
         box_body.shapes = [mdn.dyn.body.Shape.from_trimesh(box_shape)]
         # box_body.shapes[0].Kp = 5
-        # world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 1+i*.2]))
-        world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 1+i*.2]), rigid_contact=False)
+        world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 1+i*.2]))
+        # world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 1+i*.2]), rigid_contact=False)
     dt=1/60
     dynamics = mdn.dyn.dynamics.LagrangianDynamics(dt=dt)
     
