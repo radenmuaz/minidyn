@@ -29,16 +29,8 @@ class RigidContact:
         self.shape2_id = body2.shapes.index(shape2)
 
     @classmethod
-    def solve_world(cls, world, qs, qds):
-        return partial(cls._solve_world, return_d=False)(world, qs, qds)  
-    
-    @classmethod
     def solve_world_d(cls, world, qs, qds):
-        return partial(cls._solve_world, return_d=True)(world, qs, qds)
-
-    @classmethod
-    def _solve_world(cls, world, qs, qds, return_d=True):
-          
+        
         rigid_contacts = world.rigid_contacts
         body1_ids = Fn.stack_attr(rigid_contacts, 'body1_id')
         body2_ids = Fn.stack_attr(rigid_contacts, 'body2_id')
@@ -59,48 +51,49 @@ class RigidContact:
         shape2s = Shape.tree_unflatten(None, shape2_attrs)
 
         # result = jax.vmap(cls.solve)(q1s, q2s, qd1s, qd2s, shape1s, shape2s, colfunc_ids)
-        if return_d:
-            result = jax.vmap(cls.solve_with_d)(q1s, q2s, qd1s, qd2s, shape1s, shape2s, colfunc_ids)
-        else:
-            result = jax.vmap(cls.solve_without_d)(q1s, q2s, qd1s, qd2s, shape1s, shape2s, colfunc_ids)
+        result = jax.vmap(cls.solve_with_Jd)(q1s, q2s, qd1s, qd2s, shape1s, shape2s, colfunc_ids)
         result['body1_id'] = body1_ids
         result['body2_id'] = body2_ids
-        result['mu1'] = shape1s.mu
-        result['mu2'] = shape2s.mu
-        result['alpha1'] = shape1s.alpha
-        result['alpha2'] = shape2s.alpha
-
         return result
     
     @classmethod
     def get_contacts(cls, q, qd, shape1, shape2, colfunc_id):
-        q1, q2 = q[:7], q[7:]
-        qd1, qd2 = qd[:7], qd[7:]
-        col_info = jax.lax.switch(colfunc_id, [separating_axis,], q1, q2, shape1, shape2)
-        did_collide = col_info['did_collide']
-        p_ref = col_info['p_ref']
-        p_in = col_info['p_in']
-        n_ref = col_info['n_ref']
+            q1, q2 = q[:7], q[7:]
+            qd1, qd2 = qd[:7], qd[7:]
+            col_dict = jax.lax.switch(colfunc_id, [separating_axis,], q1, q2, shape1, shape2)
+            did_collide = col_dict['did_collide']
+            p_ref = col_dict['p_ref']
+            p_in = col_dict['p_in']
+            n_ref = col_dict['n_ref']
 
-        def get_depth(collide_flag, p_ref, p_in, vec):
-            return jnp.where(collide_flag, jnp.dot(p_ref-p_in, vec), 0)
-        
-        C_pen = get_depth(did_collide, p_ref, p_in, n_ref)
+            def get_depth(collide_flag, p_ref, p_in, vec):
+                return jnp.where(collide_flag, jnp.dot(p_ref-p_in, vec), 0)
+            
+            C_pen = get_depth(did_collide, p_ref, p_in, n_ref)
 
-        v_ref, v_in = qd1[4:], qd2[4:]
-        v = jnp.where((v_ref==0).all(), -v_in, -v_ref) # skip to use incidence vel if 0
+            v_ref, v_in = qd1[4:], qd2[4:]
+            v = jnp.where((v_ref==0).all(), -v_in, -v_ref) # skip to use incidence vel if 0
 
-        def to_plane(v, n):
-            return v - n*(jnp.dot(v, n) / jnp.linalg.norm(n))
-        u1_ref = to_plane(v, n_ref)
-        u2_ref = to_plane(v, -n_ref)
-        C_fric1 = get_depth(did_collide, p_ref, p_in, u1_ref)
-        C_fric2 = get_depth(did_collide, p_ref, p_in, u2_ref)
-        C = jnp.stack([C_pen, C_fric1, C_fric2])
-        return C, (C, col_info)
+            def to_plane(v, n):
+                return v - n*(jnp.dot(v, n) / jnp.linalg.norm(n))
+            u_ref = to_plane(v, n_ref)
+            C_fric = get_depth(did_collide, p_ref, p_in, u_ref)
+            C = jnp.stack([C_pen, C_fric])
+            return C, (C, col_dict)
+    
+    @classmethod
+    def solve(cls, q1, q2, qd1, qd2, shape1, shape2, colfunc_id):
+        q = jnp.concatenate([q1, q2])
+        qd = jnp.concatenate([qd1, qd2])
+        J, (C, col_info) = jax.jacfwd(cls.get_contacts, 0, True)(q, qd, shape1, shape2, colfunc_id)
+        J_pen, J_fric = jnp.split(J, 2, 0)
+        C_pen, C_fric = jnp.split(C, 2, 0)
+        return dict(J_pen=J_pen, J_fric=J_fric,
+                    C_pen=C_pen, C_fric=C_fric,
+                    col_info=col_info)
 
     @classmethod
-    def solve_with_d(cls, q1, q2, qd1, qd2, shape1, shape2, colfunc_id):
+    def solve_with_Jd(cls, q1, q2, qd1, qd2, shape1, shape2, colfunc_id):
         def get_Cd(f, q, qd, shape1, shape2, colfunc_id):
             J, (C, col_info) = jax.jacfwd(f, 0, True)(q, qd, shape1, shape2, colfunc_id)
             Cd = J@qd
@@ -109,25 +102,14 @@ class RigidContact:
         qd = jnp.concatenate([qd1, qd2])
         Jd, (J, Cd, C, col_info) = \
              jax.jacfwd(partial(get_Cd, cls.get_contacts), 0, True)(q, qd, shape1, shape2, colfunc_id)
-        Jd_pen, Jd_fric1, Jd_fric2 = jnp.split(Jd, 3, 0)
-        J_pen, J_fric1, J_fric2 = jnp.split(J, 3, 0)
-        Cd_pen, Cd_fric1, Cd_fric2  = jnp.split(Cd, 3, 0)
-        C_pen, C_fric1, C_fric2 = jnp.split(C, 3, 0)
-        return dict(Jd_pen=Jd_pen, Jd_fric1=Jd_fric1, Jd_fric2=Jd_fric2,
-                    J_pen=J_pen, J_fric1=J_fric1, J_fric2=J_fric2,
-                    Cd_pen=Cd_pen, Cd_fric1=Cd_fric1, Cd_fric2=Cd_fric2,
-                    C_pen=C_pen, C_fric1=C_fric1, C_fric2=C_fric2,
-                    col_info=col_info)
-    
-    @classmethod
-    def solve_without_d(cls, q1, q2, qd1, qd2, shape1, shape2, colfunc_id):
-        q = jnp.concatenate([q1, q2])
-        qd = jnp.concatenate([qd1, qd2])
-        J, (C, col_info) = jax.jacfwd(cls.get_contacts, 0, True)(q, qd, shape1, shape2, colfunc_id)
-        J_pen, J_fric1, J_fric2 = jnp.split(J, 3, 0)
-        C_pen, C_fric1, C_fric2 = jnp.split(C, 3, 0)
-        return dict(J_pen=J_pen, J_fric1=J_fric1, J_fric2=J_fric2,
-                    C_pen=C_pen, C_fric1=C_fric1, C_fric2=C_fric2,
+        Jd_pen, Jd_fric = jnp.split(Jd, 2, 0)
+        J_pen, J_fric = jnp.split(J, 2, 0)
+        Cd_pen, Cd_fric = jnp.split(Cd, 2, 0)
+        C_pen, C_fric = jnp.split(C, 2, 0)
+        return dict(Jd_pen=Jd_pen, Jd_fric=Jd_fric,
+                    J_pen=J_pen, J_fric=J_fric,
+                    Cd_pen=Cd_pen, Cd_fric=Cd_fric,
+                    C_pen=C_pen, C_fric=C_fric,
                     col_info=col_info)
 
     

@@ -5,6 +5,7 @@ from minidyn import dyn
 import jax
 from jax import numpy as jnp, random
 import trimesh
+import time
 # from jax.config import config
 # config.update('jax_disable_jit', True)
 if __name__ == "__main__":
@@ -29,8 +30,16 @@ if __name__ == "__main__":
         # box_body.shapes[0].Kp = 5
         world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 1+i*.2]))
         # world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 1+i*.2]), rigid_contact=False)
-    dt=1/60
+    # dt=1/60
+    dt=1/30
     dynamics = mdn.dyn.dynamics.LagrangianDynamics(dt=dt)
+
+    # q, qd = world.get_init_state()
+    # for i in range(1000):
+    #     t0 = time.time()
+    #     u = jnp.vstack([jnp.zeros(len(qd)) for qd in qd])
+    #     q, qd, aux = dynamics(world, q, qd, u)
+    #     print(f'{i}, Sim FPS: {1/(time.time()-t0):.2f}\n')
     
     sim = mdn.sim.simulator.PygfxSimulator(world, dynamics)
     # dynamics.dt=1/100.
