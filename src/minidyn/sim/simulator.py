@@ -19,6 +19,8 @@ import numpy as np
 class PygfxSimulator:
     "View the world"
     def __init__(self, world, dynamics, viz_data=None):
+        self.total_t = 0.
+        self.total_step = 0
         self.canvas = WgpuCanvas(max_fps=1/dynamics.dt)
         self.renderer = gfx.renderers.WgpuRenderer(self.canvas)
         self.scene = gfx.Scene()
@@ -81,7 +83,10 @@ class PygfxSimulator:
         self.controls.update_camera(self.camera)
         self.renderer.render(self.scene, self.camera)
         self.canvas.request_draw()
-        print(f'Sim FPS: {1/(time.time()-t0):.2f}\n')
+        dt = time.time()-t0
+        self.total_t += dt
+        self.total_step += 1
+        print(f'step: {self.total_step}\ttime:{self.total_t:2f}\tSim FPS: {1/(dt):.2f}\n')
 
         for i, q in enumerate(self.q): print(f'q{i}: ', q)
         print()

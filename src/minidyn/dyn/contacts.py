@@ -129,6 +129,12 @@ class RigidContact:
         return dict(J_pen=J_pen, J_fric1=J_fric1, J_fric2=J_fric2,
                     C_pen=C_pen, C_fric1=C_fric1, C_fric2=C_fric2,
                     col_info=col_info)
+    
+    # @classmethod
+    # def solve_dqd_world(cls, world, qs, qds, rcr, pf):
+        
+     
+            
 
     
      
