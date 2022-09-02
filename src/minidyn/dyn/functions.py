@@ -25,19 +25,45 @@ def vec_normalize(v):
     return jnp.where(norm>0, v/norm, v)
 
 def kinetic_energy(inertia, v):
-    ω = v[:3].reshape(1,3)
-    s = v[3:].reshape(1,3)
-    J = inertia.moment
+    w = v[:3]#.reshape(1,3)
+    y = v[3:]#.reshape(1,3)
+    M = inertia.moment
     c = inertia.cross_part
     m = inertia.mass
-    return ((ω @ (J @ ω.T) + s @ (m * s + 2 * (jnp.cross(ω,c))).T) / 2).reshape(1)
-
-def potential_energy(inertia, tf, g):
+    T1 = jnp.dot(w, M@w)
+    T2 = jnp.dot(y, m*y + 2*jnp.cross(w,c))
+    T = (T1 + T2) / 2
+    # breakpoint()
+    return T
+    # return ( (ω,J@ω.T + y@(0.5*(m*y + 2*(jnp.cross(ω,c))).T)) ).reshape(1)
+#  ω = angular(twist)
+#     v = linear(twist)
+#     J = inertia.moment
+#     c = inertia.cross_part
+#     m = inertia.mass
+#     (ω ⋅ (J * ω) + v ⋅ (m * v + 2 * (ω × c))) / 2
+def potential_energy(inertia, tf, gravity):
+    
     def end(x, e=0.):
-        return cat((x, jnp.array((e,)))).reshape(4,1)
+        return cat((x, jnp.array((e,)))).reshape(4)
+        # return cat((x, jnp.array((e,)))).reshape(4,1)
     
-    return inertia.mass *  (end(g, 0.).T @ (tf @ end(inertia.com, 1.)))
+    m = inertia.mass
+    g = end(gravity, 0.)
+    com = end(inertia.com, 1.)[:, jnp.newaxis]
+    com_world = tf @ com
+
+    V = m * jnp.dot(g, com_world)
+    # breakpoint()
+    return V.squeeze()
     
+    # return inertia.mass *  (end(g, 0.).T @ (tf @ end(inertia.com, 1.)))
+    # return inertia.mass *  (end(g, 0.).T @ (tf @ end(inertia.com, 1.)))
+    #  inertia = spatial_inertia(body)
+    # m = inertia.mass
+    # m > 0 || return zero(cache_eltype(state))
+    # com = transform_to_root(state, body, safe) * center_of_mass(inertia)
+    # -m * dot(state.mechanism.gravitational_acceleration, FreeVector3D(com))
 def inertia_to_world(inertia, tf):
     J = inertia.moment
     mc = inertia.cross_part.reshape(3,1)
@@ -185,3 +211,19 @@ def tree_unstack(tree):
             new_leaves[i].append(leaf[i])
     new_trees = [jax.tree_util.unflatten(l) for l in new_leaves]
     return new_trees
+
+# def breakpoint_fn(x):
+#     cond = jnp.any(x)
+#     def true_fn(x):
+#         pass
+#     def false_fn(x):
+#         jax.debug.breakpoint()
+#     jax.lax.cond(cond, true_fn, false_fn, x)
+# breakpoint_fn(did_collides)# def breakpoint_fn(x):
+#     cond = jnp.any(x)
+#     def true_fn(x):
+#         pass
+#     def false_fn(x):
+#         jax.debug.breakpoint()
+#     jax.lax.cond(cond, true_fn, false_fn, x)
+# breakpoint_fn(did_collides)

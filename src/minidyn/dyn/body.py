@@ -48,7 +48,7 @@ from jax.tree_util import register_pytree_node_class
 class Shape: 
     def __init__(self, vertices, faces, face_normals,
                     Kp=10, Kd=0.5,
-                    mu=0.5, alpha=0.9
+                    mu=0.5, alpha=0.1
                     ):
         self.vertices = vertices
         self.faces = faces

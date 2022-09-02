@@ -19,19 +19,21 @@ if __name__ == "__main__":
     N = 1
     for i in range(N):
         box_body = mdn.dyn.body.Body()
-        box_mass = 0.3
+        box_mass = 0.3-i*0.1
         box_moment = jnp.eye(3) * box_mass
         box_body.inertia = mdn.dyn.body.Inertia(mass=box_mass,
                             moment=box_moment,
                             com=jnp.array((0, 0, 0)),
                                             )
-        box_shape = trimesh.creation.box((1., 1., 1.))
+        box_shape = trimesh.creation.box((1.-0.1*i, 1.-0.1*i, 1.-0.1*i))
         box_body.shapes = [mdn.dyn.body.Shape.from_trimesh(box_shape)]
+        box_body.alpha = 0.0
         # box_body.shapes[0].Kp = 5
-        world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 1+i*.2]))
+        # world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 1+i*1.5]))
+        world.add_body(box_body, q=jnp.array([.7, 0.2, 0, 0., 0, 0. , 1+i*1.5]))
         # world.add_body(box_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 1+i*.2]), rigid_contact=False)
-    # dt=1/60
-    dt=1/30
+    dt=1/100
+    # dt=1/30
     dynamics = mdn.dyn.dynamics.LagrangianDynamics(dt=dt)
 
     # q, qd = world.get_init_state()

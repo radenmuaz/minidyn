@@ -104,12 +104,18 @@ class RigidContact:
         def get_Cd(f, q, qd, shape1, shape2, colfunc_id):
             J, (C, col_info) = jax.jacfwd(f, 0, True)(q, qd, shape1, shape2, colfunc_id)
             Cd = J@qd
+            # Cd = 10*Cd
+            # Cd = Cd - shape1.alpha*Cd # does not affect jac
             return Cd, (J, Cd, C, col_info)
         q = jnp.concatenate([q1, q2])
         qd = jnp.concatenate([qd1, qd2])
         Jd, (J, Cd, C, col_info) = \
              jax.jacfwd(partial(get_Cd, cls.get_contacts), 0, True)(q, qd, shape1, shape2, colfunc_id)
+        # breakpoint()
+            
+        # dCddqd = jax.jacfwd(partial(get_Cd, cls.get_contacts), 1, True)(q, qd, shape1, shape2, colfunc_id)[0]
         Jd_pen, Jd_fric1, Jd_fric2 = jnp.split(Jd, 3, 0)
+        # dCddqd_pen, dCddqd_fric1, dCddqd_fric2 = jnp.split(dCddqd, 3, 0)
         J_pen, J_fric1, J_fric2 = jnp.split(J, 3, 0)
         Cd_pen, Cd_fric1, Cd_fric2  = jnp.split(Cd, 3, 0)
         C_pen, C_fric1, C_fric2 = jnp.split(C, 3, 0)
@@ -117,6 +123,7 @@ class RigidContact:
                     J_pen=J_pen, J_fric1=J_fric1, J_fric2=J_fric2,
                     Cd_pen=Cd_pen, Cd_fric1=Cd_fric1, Cd_fric2=Cd_fric2,
                     C_pen=C_pen, C_fric1=C_fric1, C_fric2=C_fric2,
+                    # dCddqd_pen=dCddqd_pen, dCddqd_fric1=dCddqd_fric1, dCddqd_fric2=dCddqd_fric2,
                     col_info=col_info)
     
     @classmethod

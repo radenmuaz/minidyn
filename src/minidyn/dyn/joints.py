@@ -11,62 +11,94 @@ from pyparsing import col
 from minidyn.dyn import integrators
 from minidyn.dyn import collisions
 from minidyn.dyn import contacts
-from minidyn.dyn import World
+# from minidyn.dyn import WorldC
 import minidyn.dyn.functions as Fn
 
 @register_pytree_node_class
 class FixedJoint:
-    def __init__(self, ib_pair=[], a_pair=[]):
-        self.ib_pair = ib_pair
-        self.a_pair = a_pair
+    def __init__(self, body1_id=0, body2_id=0,
+      anchor1=jnp.array((0.0,0.0,0.0)),
+      anchor2=jnp.array((0.0,0.0,0.0))):
+        self.body1_id = body1_id
+        self.body2_id = body2_id
+        self.anchor1 = anchor1
+        self.anchor2 = anchor2
 
-    def connect(self, world, body1, body2, a1, a2):
-        ib1, ib2 = world.bodies.index(body1), world.bodies.index(body2)
-        self.ib_pair = [ib1, ib2]
-        self.a_pair = [a1, a2]
+    def connect(self, world, body1, body2, anchor1, anchor2):
+        self.body1_id = world.bodies.index(body1)
+        self.body2_id = world.bodies.index(body2)
+        self.anchor1 = anchor1
+        self.anchor2 = anchor2
+    
+    @classmethod
+    def solve_world(cls, world, qs, qds):
+        return partial(cls._solve_world, return_d=False)(world, qs, qds)  
+    
+    @classmethod
+    def solve_world_d(cls, world, qs, qds):
+        return partial(cls._solve_world, return_d=True)(world, qs, qds)
 
-    def __call__(self, q, qd):
-        def collate(q):
-            (ib1, ib2) = self.ib_pair
-            q1 = q[ib1]#[jnp.newaxis,:]
-            q2 = q[ib2]#[jnp.newaxis,:]
-            return q1, q2
-        def get_trans(q):
-            (q1, q2), (a1, a2) = collate(q), self.a_pair
+    @classmethod
+    def _solve_world(cls, world, qs, qds, return_d=True):
+          
+        fixed_joints = world.fixed_joints
+        body1_ids = Fn.stack_attr(fixed_joints, 'body1_id')
+        body2_ids = Fn.stack_attr(fixed_joints, 'body2_id')
+        anchor1s = Fn.stack_attr(fixed_joints, 'anchor1')
+        anchor2s = Fn.stack_attr(fixed_joints, 'anchor2')
+
+        q1s, q2s = qs[body1_ids], qs[body2_ids]
+        qd1s, qd2s = qds[body1_ids], qds[body2_ids]
+
+        # result = jax.vmap(cls.solve)(q1s, q2s, qd1s, qd2s, shape1s, shape2s, colfunc_ids)
+        if return_d:
+            result = jax.vmap(cls.solve_with_d)(q1s, q2s, qd1s, qd2s, anchor1s, anchor2s)
+        else:
+            result = jax.vmap(cls.solve_without_d)(q1s, q2s, qd1s, qd2s, anchor1s, anchor2s)
+        result['body1_id'] = body1_ids
+        result['body2_id'] = body2_ids
+
+        return result
+    
+    @classmethod
+    def get_constraints(cls, q, anchor1, anchor2):
+        q1, q2 = q[:7], q[7:]
+
+        def get_trans(q1, q2, anchor1, anchor2):
             x1, x2 = q1[4:], q2[4:]
-            ret = (x1 + a1) - (x2 + a2)
-            return ret, ret
-        def get_rot(q):
-            (q1, q2) = collate(q)
+            ret = (x1 + anchor1) - (x2 + anchor2)
+            return ret
+        def get_rot(q1, q2):
             quat1, quat2 = q1[:4], q2[:4]
 
             ret = (quat1 * Fn.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
-            return ret, ret
-        
-        def get_J_Jd(f, q, qd):
-            J, C = jax.jacfwd(f, 0, True)(q)
-            k = C.size
-            N = q.size
-            # Cd = J.reshape(k,N)@qd.reshape(N,1)
-            Cd = (J*qd[jnp.newaxis,::]).sum(2).sum(1)
-            # breakpoint()
-            return Cd, (J, Cd, C)
+            return ret
 
-        # J_rot, C_rot = jax.jacfwd(get_rot, 0 , True)(q)
-        # J_trans, C_trans = jax.jacfwd(get_trans, 0, True)(q)
-        Jd_rot, (J_rot, Cd_rot, C_rot) = jax.jacfwd(partial(get_J_Jd, get_rot), 0, True)(q, qd)
-        Jd_trans, (J_trans, Cd_trans, C_trans) = jax.jacfwd(partial(get_J_Jd, get_trans), 0, True)(q, qd)
-        # return Jd_trans, J_trans, Cd_trans, C_trans
-        Jd = jnp.concatenate([Jd_rot, Jd_trans])
-        J = jnp.concatenate([J_rot, J_trans])
-        Cd = jnp.concatenate([Cd_rot, Cd_trans])
-        C = jnp.concatenate([C_rot, C_trans])
-        return Jd, J, Cd, C 
+        C_trans = get_trans(q1, q2, anchor1, anchor2)
+        C_rot = get_rot(q1, q2)
+        C = jnp.concatenate([C_rot,C_trans])
+        return C, (C, )
+    
+    @classmethod
+    def solve_with_d(cls, q1, q2, qd1, qd2, anchor1, anchor2):
+        def get_Cd(f, q, qd, anchor1, anchor2):
+            J, (C,) = jax.jacfwd(f, 0, True)(q, anchor1, anchor2)
+            Cd = J@qd
+            return Cd, (J, Cd, C)
+        q = jnp.concatenate([q1, q2])
+        qd = jnp.concatenate([qd1, qd2])
+        Jd, (J, Cd, C) = \
+             jax.jacfwd(partial(get_Cd, cls.get_constraints), 0, True)(q, qd, anchor1, anchor2)
+        dCddqd = jax.jacfwd(partial(get_Cd, cls.get_constraints), 1, True)(q, qd, anchor1, anchor2)[0]
+        return dict(Jd=Jd, J=J, Cd=Cd, C=C, dCddqd=dCddqd)
+                    # dCddqd_pen=dCddqd_pen, dCddqd_fric1=dCddqd_fric1, dCddqd_fric2=dCddqd_fric2,
     
     def tree_flatten(self):
         children = (
-                    self.ib_pair,
-                    self.a_pair
+                    self.body1_id,
+                    self.body2_id,
+      self.anchor1,
+      self.anchor2,
                     )
         aux_data = None
         return (children, aux_data)
