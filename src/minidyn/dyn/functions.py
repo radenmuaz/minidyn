@@ -33,7 +33,6 @@ def kinetic_energy(inertia, v):
     T1 = jnp.dot(w, M@w)
     T2 = jnp.dot(y, m*y + 2*jnp.cross(w,c))
     T = (T1 + T2) / 2
-    # breakpoint()
     return T
     # return ( (ω,J@ω.T + y@(0.5*(m*y + 2*(jnp.cross(ω,c))).T)) ).reshape(1)
 #  ω = angular(twist)
@@ -69,17 +68,33 @@ def inertia_to_world(inertia, tf):
     mc = inertia.cross_part.reshape(3,1)
     m = inertia.mass
     R = tf[:3,:3]
-    p = tf[4,:3].reshape(1,3)
+    p = tf[3,:3].reshape(1,3)
 
     Rmc = R @ mc
     mp = m * p
     mcnew = (Rmc + mp.T).reshape(3)
     X = Rmc @ p
     Y = X + X.T + mp @ p.T
-    Jnew = R @ J @ R.T - Y + jnp.trace(Y) * jnp.eye(3)
+    Jnew = R @ J @ R.T - Y + jnp.trace(Y)*jnp.eye(3)
 
     return Inertia(m, Jnew, mcnew)
+# @inline function transform(inertia::SpatialInertia, t::Transform3D)
+#     @framecheck(t.from, inertia.frame)
+#     J = inertia.moment
+#     mc = inertia.cross_part
+#     m = inertia.mass
+#     R = rotation(t)
+#     p = translation(t)
 
+#     Rmc = R * mc
+#     mp = m * p
+#     mcnew = Rmc + mp
+#     X = Rmc * transpose(p)
+#     Y = X + transpose(X) + mp * transpose(p)
+#     Jnew = R * J * transpose(R) - Y + tr(Y) * I
+
+#     SpatialInertia(t.to, Jnew, mcnew, m)
+# end
 def quat_norm(quat,eps=1e-9):
     # return quat / (quat @ quat.T)**0.5
     # return vec_normalize(quat)
@@ -117,19 +132,22 @@ def q2tf(q: jnp.array):
     # breakpoint()
     return cat((cat((R, T),1), B),0)
 
-def qqd2v(q, qdot):
-    quat = quat_norm(q[0:4])
+def qqd2v(q, qd):
+    # quat = quat_norm(q[0:4])
+    quat = q
     w, x, y, z = quat[0], quat[1], quat[2], quat[3]
     vjac_angvel = 2 * jnp.array([
         [-x, w, z, -y],
         [-y, -z, w, x],
         [-z, y, -x, w],
         ])
-    quatdot = quat_norm(qdot[0:4])
+    # quatdot = quat_norm(qdot[0:4])
+    quatdot = qd[0:4]
     angvel = vjac_angvel @ quatdot
-    posdot = qdot[4:]
+    posdot = qd[4:]
     quat_inv = cat((quat[0:1],quat[1:]*-1)) / (quat@quat)
     linvel = quat2mat(quat_inv) @ posdot
+    # breakpoint()
     return cat((angvel, linvel)) # 7-dim -> 6-dim
 
 def qv2qd(q, v):

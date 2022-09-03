@@ -17,14 +17,14 @@ from minidyn.dyn import functions as Fn
 
 @register_pytree_node_class
 class LagrangianDynamics(object):
-    def __init__(self, dt=1/30., a=1):
+    def __init__(self, dt=1/30., a=0.01):
         super().__init__()
         self.integrator = integrators.euler
         self.dt = dt
         self.a = a
     
-    # @partial(jax.jit, static_argnums=(0,))
-    @jax.jit
+    @partial(jax.jit, static_argnums=(0,))
+    # @jax.jit
     def __call__(self, world: world.World, qs, qds, us):            
         def get_L(q, qd, inertia, gravity):
             tf = Fn.q2tf(q)
@@ -63,14 +63,15 @@ class LagrangianDynamics(object):
             g = jnp.concatenate([gs[body1_id], gs[body2_id]])
             qd = jnp.concatenate([qds[body1_id], qds[body2_id]])
             K = J @ Minv @ J.T
-            # Kinv = jnp.linalg.pinv(K)
-            Kinv = 1/(K+1e-12)
+            Kinv = 1/K
+            Kinv = jnp.where(jnp.isinf(Kinv), 0, Kinv)
+            # Kinv = jnp.where(jnp.isinf(Kinv), 1e9, Kinv)
             # breakpoint()
             T1 = J@Minv@(u-g)
             T2 = (Jd + 2*self.a*J)@qd
             T3 = (self.a**2)*C
             # T3 = (self.a**2)*C[::,jnp.newaxis]
-            Lmult = Kinv * (T1 + T2 + T3)
+            Lmult = Kinv * (T1 - T2 - T3)
             if Lmult_func is not None:
                 Lmult = Lmult_func(Lmult, Lmult_args)
 
@@ -97,25 +98,30 @@ class LagrangianDynamics(object):
 
             get_forces = partial(proto_get_forces, Minvs, us, gs, qds, None, None)
             # jax.vmap(get_forces)(J[0], Jd[0], C[0], body1_ids[0], body2_ids[0])
-            forces=jax.vmap(jax.vmap(get_forces))(J, Jd, C, body1_ids, body2_ids)
+            forces = jax.vmap(jax.vmap(get_forces))(J, Jd, C, body1_ids, body2_ids)
             # breakpoint()
 
             F1_list += [forces['F1']]
             F2_list += [forces['F2']]
             body1_id_list += [forces['body1_id']]
             body2_id_list += [forces['body2_id']]
-            jax.debug.print('F {x}',x=forces['F1'])
+            jax.debug.print('F1 {x}',x=forces['F1'])
+            jax.debug.print('C {x}',x=C)
+            # jax.debug.print('J {x}',x=J)
 
 
 
         if (len(world.rigid_contacts)>0):
             rigid_contacts_result = RigidContact.solve_world_d(world, qs, qds)
             rcr = rigid_contacts_result
-            C_fric1s, C_fric2s, C_pens = rcr['C_fric1'], rcr['C_fric1'], rcr['C_pen']
-            J_fric1s, J_fric2s, J_pens = rcr['J_fric1'], rcr['J_fric2'], rcr['J_pen']
-            Jd_fric1s, Jd_fric2s, Jd_pens = rcr['Jd_fric1'], rcr['Jd_fric2'], rcr['Jd_pen']
-            body1_ids, body2_ids = rcr['body1_id'], rcr['body2_id']
-            mu1s, mu2s= rcr['mu1'], rcr['mu2']
+            C_fric1s, C_fric2s, C_pens = rcr['C_fric1'].squeeze(1), rcr['C_fric1'].squeeze(1), rcr['C_pen'].squeeze(1)
+            J_fric1s, J_fric2s, J_pens = rcr['J_fric1'].squeeze(1), rcr['J_fric2'].squeeze(1), rcr['J_pen'].squeeze(1)
+            Jd_fric1s, Jd_fric2s, Jd_pens = rcr['Jd_fric1'].squeeze(1), rcr['Jd_fric2'].squeeze(1), rcr['Jd_pen'].squeeze(1)
+            # body1_ids, body2_ids = rcr['body1_id'], rcr['body2_id']
+            body1_ids = rcr['body1_id']
+            body2_ids = rcr['body2_id']
+            mu1s = rcr['mu1']
+            mu2s = rcr['mu2']
             jax.debug.print('J_pens {x}',x=J_pens)
             jax.debug.print('col_info {x}',x=rigid_contacts_result['col_info'])
 
@@ -133,12 +139,13 @@ class LagrangianDynamics(object):
                 return Lmult_new
         
             get_forces_friction = partial(proto_get_forces, Minvs, us, gs, qds, Lmult_fric)
-
+            # breakpoint()
             fric1_forces = jax.vmap(get_forces_friction)((mu1s, F_pens), J_fric1s, Jd_fric1s, C_fric1s, body1_ids, body2_ids)
             f1f = fric1_forces
             F1_fric1s, F2_fric1s, body1_id_fric1s, body2_id_fric1s = f1f['F1'], f1f['F2'], f1f['body1_id'], f1f['body2_id']
 
-            fric2_forces = jax.vmap(get_forces_friction)((mu2s, F_pens),J_fric2s, Jd_fric2s, C_fric2s, body1_ids, body2_ids)
+            fric2_forces = jax.vmap(get_forces_friction)((mu1s, F_pens), J_fric2s, Jd_fric2s, C_fric2s, body1_ids, body2_ids)
+            # fric2_forces = jax.vmap(get_forces_friction)((mu2s, F_pens),J_fric2s, Jd_fric2s, C_fric2s, body1_ids, body2_ids)
             f2f = fric2_forces
             F1_fric2s, F2_fric2s, body1_id_fric2s, body2_id_fric2s = f2f['F1'], f2f['F2'], f2f['body1_id'], f2f['body2_id']
 
@@ -154,38 +161,44 @@ class LagrangianDynamics(object):
 
             did_collides = rcr['col_info']['did_collide']
             alpha1s, alpha2s= rcr['alpha1'], rcr['alpha2']
-            Cd_pens = rcr['Cd_pen']
+            Cd_pens = rcr['Cd_pen'].squeeze(1)
             J_pens = pf['J']
             def get_Minv_from_ids(Minvs, body1_id, body2_id):
                 Minv1, Minv2 = Minvs[body1_id], Minvs[body2_id]
                 Minv = jnp.zeros([14, 14]).at[:7,:7].set(Minv1).at[7:,7:].set(Minv2)
                 return Minv
-            Minv_pens = jax.vmap(partial(get_Minv_from_ids, Minvs))(body1_id_pens, body2_id_pens)
+            Minv_pens = jax.vmap(partial(get_Minv_from_ids, Minvs))(body1_ids, body2_ids)
             def get_qd_from_ids(qds, body1_id, body2_id):
                 qd1, qd2 = qds[body1_id], qds[body2_id]
                 qd = jnp.concatenate([qd1, qd2])
                 return qd
-            qd_pens = jax.vmap(partial(get_qd_from_ids, qds))(body1_id_pens, body2_id_pens)
+            qd_pens = jax.vmap(partial(get_qd_from_ids, qds))(body1_ids, body2_ids)
 
             def get_dqd_pen(Minv, qd, J, did_collide, Cd, alpha1, alpha2):
                 def bounce(Minv, qd, J, alpha1, alpha2):
+                    # J = J[:,jnp.newaxis]
                     alpha = jnp.max(jnp.stack([alpha1, alpha2]))
-                    dqd = (1+alpha)*(Minv@J.T@jnp.linalg.pinv(J@Minv@J.T)@J@qd)
+                    K = J @ Minv @ J.T
+                    Kinv = 1/K
+                    Kinv = jnp.where(jnp.isinf(Kinv), 0, Kinv)
+                    dqd = (1+alpha)*(Minv@J.T*Kinv*J@qd)
+                    # dqd = (1+alpha)*(Minv@J.T@jnp.linalg.pinv(J@Minv@J.T)@J@qd)
+                    # dqd = (1+alpha)*(Minv@J.T@jnp.linalg.pinv((J@Minv@J.T).reshape(1, 1))@J@qd)
 
                     return dqd
                 do_apply = jnp.logical_and(did_collide, Cd >= 0)
                 return jnp.where(do_apply, 
                         bounce(Minv, qd, J, alpha1, alpha2),
                         jnp.zeros(14))
-            dqd_pens = jax.vmap(get_dqd_pen)(Minv_pens, qd_pens, J_pens,
-                                     did_collides, Cd_pens, alpha1s, alpha2s)
+            dqd_pens = jax.vmap(get_dqd_pen)(Minv_pens, qd_pens, J_pens,did_collides, Cd_pens, alpha1s, alpha2s)
+            # breakpoint()
             # if did_collides.any():
             #     breakpoint()
             dqd_pen1s, dqd_pen2s = jnp.split(dqd_pens, 2, 1)
             def proto_map_dqd_to_qs_shape(qs_shape, qd1, qd2, body1_id, body2_id):
                 return jnp.zeros(qs_shape).at[body1_id].set(qd1).at[body2_id].set(qd2)
             map_dqd_to_qs_shape = partial(proto_map_dqd_to_qs_shape, qs.shape)
-            dqd_pens_mapped = jax.vmap(map_dqd_to_qs_shape)(dqd_pen1s, dqd_pen2s, body1_id_pens, body2_id_pens)
+            dqd_pens_mapped = jax.vmap(map_dqd_to_qs_shape)(dqd_pen1s, dqd_pen2s, body1_ids, body2_ids)
             jax.debug.print('Cd_pens {x}',x=Cd_pens)
             jax.debug.print('dqd_pens {x}',x=dqd_pens)
         else:
@@ -262,8 +275,14 @@ class LagrangianDynamics(object):
         #     dqd_pens_mapped = jnp.zeros_like(qds)
 
         if (len(F1_list)>0):
-            F1s, F2s = jnp.concatenate(F1_list), jnp.concatenate(F2_list)
-            body1_ids, body2_ids = jnp.concatenate(body1_id_list), jnp.concatenate(body2_id_list)
+            # breakpoint()
+            F1_list_flat = [f.reshape(-1, 7) for f in F1_list]
+            F2_list_flat = [f.reshape(-1, 7) for f in F2_list]
+            body1_id_list_flat = [b.reshape(-1) for b in body1_id_list]
+            body2_id_list_flat = [b.reshape(-1) for b in body2_id_list]
+            # breakpoint()
+            F1s, F2s = jnp.concatenate(F1_list_flat), jnp.concatenate(F2_list_flat)
+            body1_ids, body2_ids = jnp.concatenate(body1_id_list_flat), jnp.concatenate(body2_id_list_flat)
 
             def proto_map_F_to_qs_shape(qs_shape, F1, F2, body1_id, body2_id):
                 return jnp.zeros(qs_shape).at[body1_id].set(F1).at[body2_id].set(F2)
@@ -283,7 +302,8 @@ class LagrangianDynamics(object):
 
         aux = dict(constraints_results=constraints_results,
                     forces=forces,
-                         energies=energies)
+                         energies=energies)    
+        # breakpoint()
         
         return qs_new, qds_new, aux
     

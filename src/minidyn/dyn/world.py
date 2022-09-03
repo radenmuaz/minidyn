@@ -60,9 +60,9 @@ class World:
         self.add_body(body, static=True, q=q)
         return body, body.inertia, shape
 
-    def add_body(self, body, q=None, qd=None, static=False, rigid_contact=True):
+    def add_body(self, body, q=None, qd=None, static=False, rigid_contact=False):
         q = q if q is not None else jnp.zeros(7).at[0].set(1)
-        qd = qd if qd is not None else jnp.zeros(7).at[0].set(1e-9)
+        qd = qd if qd is not None else jnp.zeros(7)#.at[0].set(1e-9)
         self.bodies += [body,]
         if rigid_contact:
             for other_body in self.bodies:
