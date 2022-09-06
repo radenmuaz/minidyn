@@ -32,8 +32,7 @@ class World:
     '''
     def __init__(self, joints=[], fixed_joints=[], rigid_contacts=[],
                      bodies=[],gravity=jnp.array((0, 0, 9.81)),
-                    init_qs=[], init_qds=[],
-                    static_flags=[],
+                    init_qs=[], init_vs=[]
                     ):
         self.joints = joints
         self.fixed_joints = fixed_joints
@@ -41,9 +40,8 @@ class World:
         self.bodies = bodies
         self.gravity = gravity
         self.init_qs = init_qs
-        self.init_qds = init_qds
+        self.init_vs = init_vs
     
-        self.static_flags = static_flags
         
 
     
@@ -57,12 +55,12 @@ class World:
         body.shapes[0].Kp = Kp
         if q is None:
             q = jnp.array([1., 0.0 , 0, 0., 0, 0. , -h/2])
-        self.add_body(body, static=True, q=q)
+        self.add_body(body, q=q)
         return body, body.inertia, shape
 
-    def add_body(self, body, q=None, qd=None, static=False, rigid_contact=False):
+    def add_body(self, body, q=None, v=None, rigid_contact=False):
         q = q if q is not None else jnp.zeros(7).at[0].set(1)
-        qd = qd if qd is not None else jnp.zeros(7)#.at[0].set(1e-9)
+        v = v if v is not None else jnp.zeros(6)#.at[0].set(1e-9)
         self.bodies += [body,]
         if rigid_contact:
             for other_body in self.bodies:
@@ -75,8 +73,7 @@ class World:
                         self.add_rigid_contact(rigid_contact)
 
         self.init_qs += [q]
-        self.init_qds += [qd]
-        self.static_flags += [static]
+        self.init_vs += [v]
         
     
     def add_joint(self, joint):
@@ -90,7 +87,7 @@ class World:
         self.rigid_contacts += [rigid_contact,]
     
     def get_init_state(self):
-        return jnp.vstack(self.init_qs), jnp.vstack(self.init_qds)
+        return jnp.vstack(self.init_qs), jnp.vstack(self.init_vs)
     
     def tree_flatten(self):
         children = (
@@ -100,8 +97,7 @@ class World:
                     self.bodies,
                     self.gravity,
                     self.init_qs,
-                    self.init_qds,
-                    self.static_flags,
+                    self.init_vs,
                     )
         aux_data = None
         return (children, aux_data)

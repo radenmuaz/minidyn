@@ -10,8 +10,8 @@ import trimesh
 if __name__ == "__main__":
     jnp.set_printoptions(precision=2)
 
-    # world = mdn.dyn.world.World(gravity=jnp.array((0, 0, 9.81)))
-    world = mdn.dyn.world.World(gravity=jnp.array((0, 0, 0)))
+    world = mdn.dyn.world.World(gravity=jnp.array((0, 0, 9.81)))
+    # world = mdn.dyn.world.World(gravity=jnp.array((0, 0, 0)))
     # ground_body, _, _ = world.add_ground(h=0.2, w=5, q=jnp.array([1., 0.0 , 0, 0., 0, 0. ,1]))
     # world = dyn.World(gravity=jnp.array((0, 0, 0)))
 
@@ -31,8 +31,8 @@ if __name__ == "__main__":
                         moment=box1_moment, com=jnp.array((0, 0, 0)))
     box1_shape = trimesh.creation.box((5, 5, 1))
     box1_body.shapes = [mdn.dyn.body.Shape.from_trimesh(box1_shape)]
-    world.add_body(box1_body, q=jnp.array([.9, 0.1, 0, 0. ,0, 0 , 0]))
-    # world.add_body(box1_body, q=jnp.array([1., 0, 0, 0., 0, 0. , 0]), qd=jnp.array([0.1, 0.1, 0, 0., 0, 0. , 0]))
+    # world.add_body(box1_body, q=jnp.array([1, 0, 0, 0. ,0, 0 , 0]))
+    world.add_body(box1_body, q=jnp.array([0.9, 0.4, 0, 0. ,0, 0 , 0]))
 
     
 
@@ -48,14 +48,14 @@ if __name__ == "__main__":
     #                             com=jnp.array((0, 0, 0)))
     # box2_shape = trimesh.creation.box((1., 1., 1.))
     # box2_body.shapes = [mdn.dyn.body.Shape.from_trimesh(box2_shape)]
-    # world.add_body(box2_body, q=jnp.array([1., 0, 0, 0., 0, 1 , 1.2]))
+    # world.add_body(box2_body, q=jnp.array([1., 0, 0, 0., 0, 0 , 1.]))
     # rigid_contact = mdn.dyn.RigidContact()
     # rigid_contact.connect(world, box1_body, box2_body, box1_body.shapes[0], box2_body.shapes[0])
     # world.add_rigid_contact(rigid_contact)
 
 
 
-    dt=1/20
+    dt=1/100
     dynamics = mdn.dyn.dynamics.LagrangianDynamics(dt=dt)
     
     sim = mdn.sim.simulator.PygfxSimulator(world, dynamics)

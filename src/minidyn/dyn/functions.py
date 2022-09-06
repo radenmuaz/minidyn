@@ -100,6 +100,7 @@ def quat_norm(quat,eps=1e-9):
     # return vec_normalize(quat)
     # return quat/norm
     norm = jnp.linalg.norm(quat)
+    return quat/norm
     # return jnp.where(norm>eps, quat/norm, quat)# jnp.array([1.,0,0,0]))
     return jnp.where(norm>eps, quat/norm, jnp.array([1.,0,0,0]))
 
@@ -119,8 +120,8 @@ def quat2mat(quat, eps=1e-9):
             [[ 1.0-(yY+zZ), xY-wZ, xZ+wY ],
             [ xY+wZ, 1.0-(xX+zZ), yZ-wX ],
             [ xZ-wY, yZ+wX, 1.0-(xX+yY) ]])
-    return jnp.where(Nq<eps, jnp.eye(3), get_mat(w, x, y, z, Nq))
-    # return  get_mat(w, x, y, z, Nq)
+    # return jnp.where(Nq<eps, jnp.eye(3), get_mat(w, x, y, z, Nq))
+    return  get_mat(w, x, y, z, Nq)
     
 def quat_inv(quat):
     return cat((quat[0:1],quat[1:]*-1)) / (quat.T@quat)
@@ -133,8 +134,8 @@ def q2tf(q: jnp.array):
     return cat((cat((R, T),1), B),0)
 
 def qqd2v(q, qd):
-    # quat = quat_norm(q[0:4])
-    quat = q
+    quat = quat_norm(q[0:4])
+    # quat = q[0:4]
     w, x, y, z = quat[0], quat[1], quat[2], quat[3]
     vjac_angvel = 2 * jnp.array([
         [-x, w, z, -y],
@@ -144,9 +145,10 @@ def qqd2v(q, qd):
     # quatdot = quat_norm(qdot[0:4])
     quatdot = qd[0:4]
     angvel = vjac_angvel @ quatdot
-    posdot = qd[4:]
-    quat_inv = cat((quat[0:1],quat[1:]*-1)) / (quat@quat)
-    linvel = quat2mat(quat_inv) @ posdot
+    # posdot = qd[4:]
+    # quat_inv = cat((quat[0:1],quat[1:]*-1)) / (quat@quat)
+    # linvel = quat2mat(quat_inv) @ posdot
+    linvel = qd[4:]
     # breakpoint()
     return cat((angvel, linvel)) # 7-dim -> 6-dim
 
@@ -161,8 +163,9 @@ def qv2qd(q, v):
                         [z,  w, -x],
                         [-y,  x,  w]]) / 2
     quatdot = vjac_quatdot @ angvel
+    return cat((quatdot, linvel)) # 6-dim -> 7-dim
     transdot = quat2mat(quat) @ linvel
-    return jnp.hstack((quatdot, transdot)) # 6-dim -> 7-dim
+    return cat((quatdot, transdot)) # 6-dim -> 7-dim
 
 
 def se3_commutator(xω, xv, yω, yv):

@@ -70,8 +70,11 @@ class FixedJoint:
             return ret
         def get_rot(q1, q2):
             quat1, quat2 = q1[:4], q2[:4]
+            quat1, quat2 = Fn.quat_norm(quat1), Fn.quat_norm(quat2)
 
-            ret = (quat1 * Fn.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
+            # ret = (quat1 * Fn.quat_inv(quat2)) - jnp.array([1, 0, 0, 0])
+            ret = jnp.array([1, 0, 0, 0]) - (quat1 * Fn.quat_inv(quat2))
+            # ret = quat1 * Fn.quat_inv(quat2)
             return ret
 
         C_trans = get_trans(q1, q2, anchor1, anchor2)

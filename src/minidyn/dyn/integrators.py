@@ -5,9 +5,11 @@ from jax.numpy import concatenate as cat
 from minidyn.dyn.body import Body
 from typing import *
 
+from minidyn.dyn import functions as Fn
 
-def euler(q, qd, qdd, dt=1e-3):
-    qd_new = qd + dt*qdd
-    q_new = q + dt*qd_new
+def euler(q, v, vd, dt=1e-3):
+    v_new = v + dt*vd
+    qd = Fn.qv2qd(q, v)
+    q_new = q + dt*qd
 
-    return q_new, qd_new
+    return q_new, v_new
