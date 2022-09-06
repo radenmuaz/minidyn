@@ -31,15 +31,15 @@ class FixedJoint:
         self.anchor2 = anchor2
     
     @classmethod
-    def solve_world(cls, world, qs, qds):
-        return partial(cls._solve_world, return_d=False)(world, qs, qds)  
+    def solve_world(cls, world, qs, vs):
+        return partial(cls._solve_world, return_d=False)(world, qs, vs)  
     
     @classmethod
-    def solve_world_d(cls, world, qs, qds):
-        return partial(cls._solve_world, return_d=True)(world, qs, qds)
+    def solve_world_d(cls, world, qs, vs):
+        return partial(cls._solve_world, return_d=True)(world, qs, vs)
 
     @classmethod
-    def _solve_world(cls, world, qs, qds, return_d=True):
+    def _solve_world(cls, world, qs, vs, return_d=True):
           
         fixed_joints = world.fixed_joints
         body1_ids = Fn.stack_attr(fixed_joints, 'body1_id')
@@ -48,13 +48,13 @@ class FixedJoint:
         anchor2s = Fn.stack_attr(fixed_joints, 'anchor2')
 
         q1s, q2s = qs[body1_ids], qs[body2_ids]
-        qd1s, qd2s = qds[body1_ids], qds[body2_ids]
+        v1s, v2s = vs[body1_ids], vs[body2_ids]
 
         # result = jax.vmap(cls.solve)(q1s, q2s, qd1s, qd2s, shape1s, shape2s, colfunc_ids)
         if return_d:
-            result = jax.vmap(cls.solve_with_d)(q1s, q2s, qd1s, qd2s, anchor1s, anchor2s)
+            result = jax.vmap(cls.solve_with_d)(q1s, q2s, v1s, v2s, anchor1s, anchor2s)
         else:
-            result = jax.vmap(cls.solve_without_d)(q1s, q2s, qd1s, qd2s, anchor1s, anchor2s)
+            result = jax.vmap(cls.solve_without_d)(q1s, q2s, v1s, v2s, anchor1s, anchor2s)
         result['body1_id'] = body1_ids
         result['body2_id'] = body2_ids
 
@@ -83,18 +83,27 @@ class FixedJoint:
         return C, (C, )
     
     @classmethod
-    def solve_with_d(cls, q1, q2, qd1, qd2, anchor1, anchor2):
-        def get_Cd(f, q, qd, anchor1, anchor2):
-            J, (C,) = jax.jacfwd(f, 0, True)(q, anchor1, anchor2)
-            Cd = J@qd
+    def solve_with_d(cls, q1, q2, v1, v2, anchor1, anchor2):
+        def get_J_col(J_q_col, q_col):
+            Jang1 = J_q_col[0:4]@Fn.get_jac_quatdot(q_col[0:4])
+            Jlin1 = J_q_col[4:7]
+            Jang2 = J_q_col[7:11]@Fn.get_jac_quatdot(q_col[7:11])
+            Jlin2 = J_q_col[11:14]
+            return jnp.concatenate([Jang1, Jlin1, Jang2, Jlin2])
+        def get_Cd(f, q, v, anchor1, anchor2):
+            J_q, (C,) = jax.jacfwd(f, 0, True)(q, anchor1, anchor2)
+            
+            J = jax.vmap(get_J_col)(J_q, jnp.repeat(q[jnp.newaxis,:], len(J_q), 0))
+            Cd = J@v
+            # breakpoint()
             return Cd, (J, Cd, C)
         q = jnp.concatenate([q1, q2])
-        qd = jnp.concatenate([qd1, qd2])
-        Jd, (J, Cd, C) = \
-             jax.jacfwd(partial(get_Cd, cls.get_constraints), 0, True)(q, qd, anchor1, anchor2)
-        dCddqd = jax.jacfwd(partial(get_Cd, cls.get_constraints), 1, True)(q, qd, anchor1, anchor2)[0]
-        return dict(Jd=Jd, J=J, Cd=Cd, C=C, dCddqd=dCddqd)
-                    # dCddqd_pen=dCddqd_pen, dCddqd_fric1=dCddqd_fric1, dCddqd_fric2=dCddqd_fric2,
+        v = jnp.concatenate([v1, v2])
+        Jd_q, (J, Cd, C) = \
+             jax.jacfwd(partial(get_Cd, cls.get_constraints), 0, True)(q, v, anchor1, anchor2)
+        Jd = jax.vmap(get_J_col)(Jd_q, jnp.repeat(q[jnp.newaxis,:], len(Jd_q), 0))
+        dCddv = jax.jacfwd(partial(get_Cd, cls.get_constraints), 1, True)(q, v, anchor1, anchor2)[0]
+        return dict(Jd=Jd, J=J, Cd=Cd, C=C, dCddv=dCddv)
     
     def tree_flatten(self):
         children = (

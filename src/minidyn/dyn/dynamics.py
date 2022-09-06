@@ -17,7 +17,7 @@ from minidyn.dyn import functions as Fn
 
 @register_pytree_node_class
 class LagrangianDynamics(object):
-    def __init__(self, dt=1/30., a=1):
+    def __init__(self, dt=1/30., a=10):
         super().__init__()
         self.integrator = integrators.euler
         self.dt = dt
@@ -49,7 +49,7 @@ class LagrangianDynamics(object):
 
         def proto_get_forces(Minvs, us, gs, vs, Lmult_func, Lmult_args, J, Jd, C, body1_id, body2_id):
             Minv1, Minv2 = Minvs[body1_id], Minvs[body2_id]
-            Minv = jnp.zeros([14, 14]).at[:7,:7].set(Minv1).at[7:,7:].set(Minv2)
+            Minv = jnp.zeros([12, 12]).at[:6,:6].set(Minv1).at[6:,6:].set(Minv2)
             u = jnp.concatenate([us[body1_id], us[body2_id]])
             g = jnp.concatenate([gs[body1_id], gs[body2_id]])
             v = jnp.concatenate([vs[body1_id], vs[body2_id]])
@@ -82,12 +82,12 @@ class LagrangianDynamics(object):
             # breakpoint()
             fixed_joints_result = FixedJoint.solve_world_d(world, qs, vs)
             fjr = fixed_joints_result
-            C, J, Jd, dCddqd = fjr['C'], fjr['J'], fjr['Jd'], fjr['dCddqd']
+            C, J, Jd, dCddv = fjr['C'], fjr['J'], fjr['Jd'], fjr['dCddv']
             N = C.shape[1]
             body1_ids = jnp.repeat(fjr['body1_id'], N)[jnp.newaxis,::]
             body2_ids = jnp.repeat(fjr['body2_id'], N)[jnp.newaxis,::]
 
-            get_forces = partial(proto_get_forces, Minvs, us, gs, qds, None, None)
+            get_forces = partial(proto_get_forces, Minvs, us, gs, vs, None, None)
             # jax.vmap(get_forces)(J[0], Jd[0], C[0], body1_ids[0], body2_ids[0])
             forces = jax.vmap(jax.vmap(get_forces))(J, Jd, C, body1_ids, body2_ids)
             # breakpoint()
@@ -269,17 +269,17 @@ class LagrangianDynamics(object):
 
         if (len(F1_list)>0):
             # breakpoint()
-            F1_list_flat = [f.reshape(-1, 7) for f in F1_list]
-            F2_list_flat = [f.reshape(-1, 7) for f in F2_list]
+            F1_list_flat = [f.reshape(-1, 6) for f in F1_list]
+            F2_list_flat = [f.reshape(-1, 6) for f in F2_list]
             body1_id_list_flat = [b.reshape(-1) for b in body1_id_list]
             body2_id_list_flat = [b.reshape(-1) for b in body2_id_list]
             F1s, F2s = jnp.concatenate(F1_list_flat), jnp.concatenate(F2_list_flat)
             body1_ids, body2_ids = jnp.concatenate(body1_id_list_flat), jnp.concatenate(body2_id_list_flat)
 
-            def proto_map_F_to_qs_shape(qs_shape, F1, F2, body1_id, body2_id):
-                return jnp.zeros(qs_shape).at[body1_id].set(F1).at[body2_id].set(F2)
-            map_F_to_qs_shape = partial(proto_map_F_to_qs_shape, qs.shape)
-            F_mapped = jax.vmap(map_F_to_qs_shape)(F1s, F2s, body1_ids, body2_ids)
+            def proto_map_F_to_vs_shape(vs_shape, F1, F2, body1_id, body2_id):
+                return jnp.zeros(vs_shape).at[body1_id].set(F1).at[body2_id].set(F2)
+            map_F_to_vs_shape = partial(proto_map_F_to_vs_shape, vs.shape)
+            F_mapped = jax.vmap(map_F_to_vs_shape)(F1s, F2s, body1_ids, body2_ids)
             F_exts = jnp.sum(F_mapped, 0)
         else:
             F_exts = jnp.zeros_like(vs)

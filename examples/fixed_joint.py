@@ -32,7 +32,7 @@ if __name__ == "__main__":
     box1_shape = trimesh.creation.box((5, 5, 1))
     box1_body.shapes = [mdn.dyn.body.Shape.from_trimesh(box1_shape)]
     # world.add_body(box1_body, q=jnp.array([1, 0, 0, 0. ,0, 0 , 0]))
-    world.add_body(box1_body, q=jnp.array([0.9, 0.4, 0, 0. ,0, 0 , 0]))
+    world.add_body(box1_body, q=jnp.array([0.9, 0.4, 0, 0. ,0, 2 , 3]))
 
     
 

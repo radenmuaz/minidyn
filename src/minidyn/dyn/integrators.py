@@ -11,5 +11,6 @@ def euler(q, v, vd, dt=1e-3):
     v_new = v + dt*vd
     qd = Fn.qv2qd(q, v)
     q_new = q + dt*qd
+    q_new = Fn.quat_norm(q_new)
 
     return q_new, v_new

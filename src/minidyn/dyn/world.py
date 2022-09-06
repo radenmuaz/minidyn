@@ -18,6 +18,7 @@ from wgpu.gui.auto import WgpuCanvas, run
 import pygfx as gfx
 from pygfx.linalg import Vector3, Matrix4, Quaternion
 import trimesh
+from minidyn.dyn import functions as Fn
 # functions = [func1, func2, func3]
 # index = jnp.arange(len(functions))
 # x = jnp.ones((3, 5))
@@ -59,7 +60,8 @@ class World:
         return body, body.inertia, shape
 
     def add_body(self, body, q=None, v=None, rigid_contact=False):
-        q = q if q is not None else jnp.zeros(7).at[0].set(1)
+        # q = q if q is not None else jnp.zeros(7).at[0].set(1)
+        q = jnp.concatenate([Fn.quat_norm(q[:4]), q[4:]]) if q is not None else jnp.zeros(7).at[0].set(1)
         v = v if v is not None else jnp.zeros(6)#.at[0].set(1e-9)
         self.bodies += [body,]
         if rigid_contact:
