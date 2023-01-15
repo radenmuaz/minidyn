@@ -5,7 +5,6 @@ import jax
 from jax import numpy as jnp, random
 from jax.tree_util import tree_map, register_pytree_node_class
 from numpy import complexfloating
-from zmq import has
 
 from minidyn.dyn import integrators
 from minidyn.dyn import collisions

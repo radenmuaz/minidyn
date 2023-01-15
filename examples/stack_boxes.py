@@ -35,7 +35,7 @@ if __name__ == "__main__":
     dt=1/100
     # dt=1/30
     dynamics = mdn.dyn.dynamics.LagrangianDynamics(dt=dt)
-
+    # breakpoint()
     # q, qd = world.get_init_state()
     # for i in range(1000):
     #     t0 = time.time()

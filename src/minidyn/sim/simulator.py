@@ -31,11 +31,11 @@ class PygfxSimulator:
         self.dynamics = dynamics
         self.q, self.qd = world.get_init_state()
 
-        self.controls = gfx.OrbitControls(
+        self.controls = gfx.OrbitController(
             eye=self.camera.position.clone(),
                                     target=Vector3(0,0,0),
                                     up=Vector3(0, 0, 1))
-        self.controls.add_default_event_handlers(self.renderer, self.canvas, self.camera)
+        self.controls.add_default_event_handlers(self.renderer, self.camera)
         # self.controls.update_camera(self.camera)
 
         self.viz_data = viz_data

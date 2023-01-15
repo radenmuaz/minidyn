@@ -7,7 +7,7 @@ from jax.numpy import concatenate as cat
 # from jax import vmap, tree_map,lax
 from jax.tree_util import tree_map
 from jax.tree_util import register_pytree_node_class
-from pyparsing import col
+
 
 from minidyn.dyn.collisions import SeparatingAxis
 
